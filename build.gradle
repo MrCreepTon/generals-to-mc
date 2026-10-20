@@ -72,9 +72,6 @@ processResources {
 }
 tasks.named('jar') {
     exclude '**/*Bench*.class'
-    from('LICENSE.md') { rename { 'LICENSE-generals-minecraft.md' } }
-    from('LICENSE.ru.md')
-    from('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.ru.md')
 }
 tasks.register('releaseChecks', JavaExec) {
     dependsOn testClasses
