@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "local.generalsmc.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MobGoalsAccessor",
+    "CameraChunkTrackingMixin",
+    "CameraEntityTrackingMixin",
+    "CameraMobDespawnMixin",
+    "StructureMovementMixin",
+    "StructureNavigationMixin",
+    "StructureExplosionMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "generalsmc",
+  "version": "${version}",
+  "name": "Generals in Minecraft",
+  "description": "Play the original Zero Hour RTS in your Minecraft world. Connect your installed game from the in-game Generals menu.",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "local.generalsmc.GeneralsMod"
+    ],
+    "client": [
+      "local.generalsmc.client.GeneralsClient"
+    ]
+  },
+  "mixins": [
+    "generalsmc.client.mixins.json",
+    "generalsmc.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader}",
+    "minecraft": "${minecraft}",
+    "java": ">=${java}",
+    "fabric-api": "*"
+  },
+  "license": "GPL-3.0-or-later",
+  "authors": [
+    "Generals in Minecraft contributors"
+  ]
+}

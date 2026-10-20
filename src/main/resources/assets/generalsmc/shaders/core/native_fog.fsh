@@ -1,0 +1,17 @@
+#version 150
+uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
+uniform mat4 InverseViewProjection;
+uniform vec3 CameraPosition;
+uniform vec4 FogBounds;
+in vec2 texCoord;
+out vec4 fragColor;
+void main(){
+    float depth=texture(Sampler0,texCoord).r;
+    vec4 relative=InverseViewProjection*vec4(texCoord*2.0-1.0,depth*2.0-1.0,1.0);
+    vec3 world=CameraPosition+relative.xyz/relative.w;
+    vec2 uv=(world.xz-FogBounds.xy)/FogBounds.z;
+    float opacity=depth<0.999999?0.58:0.0;
+    if(depth<0.999999&&all(greaterThanEqual(uv,vec2(0.0)))&&all(lessThanEqual(uv,vec2(1.0))))opacity=texture(Sampler1,uv).r;
+    fragColor=vec4(0.0,0.0,0.0,opacity);
+}

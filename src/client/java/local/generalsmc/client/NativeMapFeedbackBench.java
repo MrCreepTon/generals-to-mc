@@ -1,0 +1,18 @@
+package local.generalsmc.client;
+import local.generalsmc.nativebridge.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import java.util.*;
+/** Focused map/finder callbacks in the real player JAR and authenticated world. */
+final class NativeMapFeedbackBench {
+    static int stage,age;static double x,z,span;static net.minecraft.world.phys.Vec3 before;
+    static boolean tick(Minecraft mc,List<String> checks)throws Exception{
+        age++;if(age>250)throw new IllegalStateException("Marker/map feedback timeout "+stage);
+        if(stage==0){var map=(StartMapScreen)mc.screen;if(NativeNetworkClient.mapPoints.stream().anyMatch(p->p.kind().equals("start"))||NativeNetworkClient.mapPoints.size()!=2)throw new IllegalStateException("Supply map leaks generated resources or starts: "+NativeNetworkClient.mapPoints);x=map.cx;z=map.cz;span=map.span;double px=map.left+map.side*.4,py=map.top+map.side*.4;map.mouseClicked(px,py,0);map.mouseDragged(px+20,py+12,0,20,12);map.mouseReleased(px+20,py+12,0);if(map.cx>=x||map.cz>=z)throw new IllegalStateException("Map drag did not pan");double center=map.cx;map.mouseScrolled(map.left+map.side/2.,map.top+map.side/2.,0,1);if(map.span>=span||Math.abs(map.cx-center)>.001)throw new IllegalStateException("Centered map zoom moved its center");x=map.cx;z=map.cz;stage=1;age=0;
+        }else if(stage==1&&age>10){var map=(StartMapScreen)mc.screen;if(Math.abs(map.cx-x)>.01||Math.abs(map.cz-z)>.01)throw new IllegalStateException("Map reset its view during an update");NativeSetupBench.click(map,"Моя позиция");if(Math.abs(map.cx-mc.player.getX())>.01||Math.abs(map.cz-mc.player.getZ())>.01)throw new IllegalStateException("My Position did not recenter");Screenshot.grab(mc.gameDirectory,"108-feedback-pannable-map.png",mc.getMainRenderTarget(),c->{});checks.add("Resource map contains only placed supply/oil markers; actual drag, zoom and My Position callbacks preserve the view and locate the commander");mc.setScreen(new MarkerFinderScreen(map));stage=2;age=0;
+        }else if(stage==2&&NativeNetworkClient.markers!=null&&age>10){var finder=(MarkerFinderScreen)mc.screen;NativeSetupBench.bounds(finder);if(NativeNetworkClient.markers.points().stream().noneMatch(p->p.kind().equals("start"))||!NativeNetworkClient.markers.teleportAllowed())throw new IllegalStateException("World owner marker index is incomplete");Screenshot.grab(mc.gameDirectory,"109-feedback-marker-finder.png",mc.getMainRenderTarget(),c->{});before=mc.player.position();NativeNetworkClient.request("marker_teleport",j->{j.addProperty("x",1234567);j.addProperty("y",64);j.addProperty("z",1234567);});stage=3;age=0;
+        }else if(stage==3&&age>15){if(NativeNetworkClient.error.isEmpty()||mc.player.position().distanceTo(before)>.05)throw new IllegalStateException("Forged non-marker teleport was accepted");NativeNetworkClient.error="";var finder=(MarkerFinderScreen)mc.screen;NativeSetupBench.click(finder,"Перейти");stage=4;age=0;
+        }else if(stage==4&&age>15){var finder=(MarkerFinderScreen)mc.screen;if(!finder.status.startsWith(L.s("Вы у маркера: "))||mc.player.position().distanceTo(before)<1)throw new IllegalStateException("Actual marker teleport failed: "+finder.status+" / "+NativeNetworkClient.error);checks.add("Server marker index lists saved starts/resources by distance; owner teleport finds safe ground, and a forged unknown-coordinate request is rejected without moving the player");finder.onClose();return true;}
+        return false;
+    }
+}

@@ -1,0 +1,90 @@
+loom {
+    runs {
+        client {
+            def automated=['bench','nativeBench','nativeManualBench','nativeReleaseBench','nativeSetupBench','nativeNetworkBench','nativeVersionBench'].find { project.hasProperty(it) }
+            if(automated)runDir "build/automation-${automated}"
+            programArgs '--width', (findProperty('nativeWidth') ?: '1280'), '--height', (findProperty('nativeHeight') ?: '800')
+            vmArg '-Dmax.bg.threads=' + (findProperty('minecraftWorkers') ?: '4')
+            if (project.hasProperty('nativeFps')) { vmArg '-Dgeneralsmc.nativeFps=' + project.property('nativeFps') }
+            if (project.hasProperty('nativeRenderDistance')) { vmArg '-Dgeneralsmc.nativeRenderDistance=' + project.property('nativeRenderDistance') }
+            if (project.hasProperty('nativeSimulationDistance')) { vmArg '-Dgeneralsmc.nativeSimulationDistance=' + project.property('nativeSimulationDistance') }
+            vmArg '-Dgeneralsmc.evidence=' + project.file('evidence').absolutePath
+            vmArg '-Dgeneralsmc.catalog=' + (findProperty('catalog') ?: project.file('private/catalog.json').absolutePath)
+            vmArg '-Dgeneralsmc.nativeRoot=' + (findProperty('nativeRoot') ?: System.getenv('LOCALAPPDATA') + '/GeneralsMinecraft')
+            if (project.hasProperty('bench')) { vmArg '-Dgeneralsmc.bench=true' }
+            if (project.hasProperty('nativeBench')) { vmArg '-Dgeneralsmc.nativeBench=true' }
+            if (project.hasProperty('nativeVersionBench')) { vmArg '-Dgeneralsmc.testVersion=' + project.property('minecraft_target'); vmArg '-Dgeneralsmc.nativeVersionBench=true'; vmArg '-Dgeneralsmc.nativeTestSupport=true' }
+            if (project.hasProperty('nativeVersionUx')) { vmArg '-Dgeneralsmc.versionUxOnly=true' }
+            if (project.hasProperty('nativeSceneFixture')) { vmArg '-Dgeneralsmc.nativeSceneFixture=' + project.property('nativeSceneFixture') }
+            if (project.hasProperty('nativeManualBench')) { vmArg '-Dgeneralsmc.nativeManualBench=true' }
+            if (project.hasProperty('nativePagedWorld')) { vmArg '-Dgeneralsmc.pagedWorld=true' }
+            if (project.hasProperty('nativePagedBench')) { vmArg '-Dgeneralsmc.nativePagedBench=true' }
+            if (project.hasProperty('nativeRegressionBench')) { vmArg '-Dgeneralsmc.nativeRegressionBench=true' }
+            if (project.hasProperty('nativeEffectsBench')) { vmArg '-Dgeneralsmc.nativeEffectsBench=true' }
+            if (project.hasProperty('nativeIssueBench')) { vmArg '-Dgeneralsmc.nativeIssueBench=true' }
+            if (project.hasProperty('nativeCombatBench')) { vmArg '-Dgeneralsmc.nativeCombatBench=true' }
+            if (project.hasProperty('nativeWorldScale')) { vmArg '-Dgeneralsmc.worldScale=' + project.property('nativeWorldScale') }
+            if (project.hasProperty('nativeFogBench')) { vmArg '-Dgeneralsmc.nativeFogBench=true' }
+            if (project.hasProperty('nativeReleaseBench')) { vmArg '-Dgeneralsmc.nativeReleaseBench=true'; vmArg '-Dgeneralsmc.nativeTestSupport=true' }
+            if (project.hasProperty('nativeSetupBench')) { vmArg '-Dgeneralsmc.nativeSetupBench=true' }
+            if (project.hasProperty('nativePolishBench')) { vmArg '-Dgeneralsmc.nativePolishBench=true' }
+            if (project.hasProperty('nativeNetworkBench')) { vmArg '-Dgeneralsmc.nativeNetworkBench=true' }
+            if (project.hasProperty('nativeNetworkSoak')) { vmArg '-Dgeneralsmc.nativeNetworkSoak=true'; vmArg '-Dgeneralsmc.forceNetworkPeer=true' }
+            if (project.hasProperty('nativeNetworkCoop')) { vmArg '-Dgeneralsmc.nativeNetworkCoop=true' }
+            if (project.hasProperty('nativeFakeLatency')) { vmArg '-Dgeneralsmc.nativeFakeLatency=true' }
+            if (project.hasProperty('nativeNetworkDualOnly')) { vmArg '-Dgeneralsmc.nativeNetworkDualOnly=true'; vmArg '-Dgeneralsmc.nativeNetworkDual=true' }
+            if (project.hasProperty('nativeNetworkDual')) { vmArg '-Dgeneralsmc.nativeNetworkDual=true' }
+            if (project.hasProperty('nativeOilBench')) { vmArg '-Dgeneralsmc.nativeOilBench=true' }
+            if (project.hasProperty('nativeFog')) { vmArg '-Dgeneralsmc.nativeFog=' + project.property('nativeFog') }
+            if (project.hasProperty('nativeAudio')) { vmArg '-Dgeneralsmc.nativeAudio=' + project.property('nativeAudio') }
+        }
+        server {
+            vmArg '-Dgeneralsmc.catalog=' + (findProperty('catalog') ?: project.file('private/catalog.json').absolutePath)
+            if (project.hasProperty('bench')) { vmArg '-Dgeneralsmc.bench=true' }
+        }
+    }
+}
+
+tasks.register('verifyInstalledRotr',JavaExec){
+    dependsOn testClasses
+    classpath=sourceSets.test.runtimeClasspath
+    mainClass='local.generalsmc.release.InstalledModChecks'
+    javaLauncher=javaToolchains.launcherFor { languageVersion=JavaLanguageVersion.of(minecraftJavaVersion) }
+}
+tasks.named('runClient', JavaExec) {
+    if (project.hasProperty('nativeVersionBench')) {
+        doFirst { file('evidence').mkdirs(); file('evidence/native-version-tests.json').text = '{"result":"RUNNING"}' }
+        doLast { def report = new groovy.json.JsonSlurper().parse(file('evidence/native-version-tests.json')); if (report.result != 'PASS') throw new GradleException('Version boundary failed: ' + report) }
+        timeout = java.time.Duration.ofMinutes(6)
+    }
+    if (project.hasProperty('nativeNetworkBench')) {
+        doFirst { file('evidence/native-network-client-tests.json').text = '{"result":"RUNNING"}' }
+        doLast { def report = new groovy.json.JsonSlurper().parse(file('evidence/native-network-client-tests.json')); if (report.result != 'PASS') throw new GradleException('Native network client failed: ' + report) }
+    }
+    if (project.hasProperty('nativeSetupBench')) {
+        doFirst { file('evidence/native-setup-client-tests.json').text = '{"result":"RUNNING"}' }
+        doLast { def report = new groovy.json.JsonSlurper().parse(file('evidence/native-setup-client-tests.json')); if (report.result != 'PASS') throw new GradleException('Setup client failed: ' + report) }
+    }
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(minecraftJavaVersion) }
+    if (project.hasProperty('bench')) {
+        doFirst { file('evidence').mkdirs(); file('evidence/client-tests.json').text = '{"result":"RUNNING"}' }
+        doLast {
+            def report = new groovy.json.JsonSlurper().parse(file('evidence/client-tests.json'))
+            if (report.result != 'PASS') throw new GradleException('Real client bench did not pass: ' + report)
+        }
+    }
+    if (project.hasProperty('nativeBench')) {
+        doFirst { file('evidence').mkdirs(); file('evidence/native-client-tests.json').text = '{"result":"RUNNING"}' }
+        doLast {
+            def report = new groovy.json.JsonSlurper().parse(file('evidence/native-client-tests.json'))
+            if (report.result != 'PASS') throw new GradleException('Original engine client bench did not pass: ' + report)
+        }
+    }
+    if (project.hasProperty('nativeManualBench')) {
+        doFirst { file('evidence').mkdirs(); file('evidence/native-world-access-tests.json').text = '{"result":"RUNNING"}' }
+        doLast {
+            def report = new groovy.json.JsonSlurper().parse(file('evidence/native-world-access-tests.json'))
+            if (report.result != 'PASS') throw new GradleException('Manual original world entry did not pass: ' + report)
+        }
+    }
+}

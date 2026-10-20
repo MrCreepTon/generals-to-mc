@@ -1,0 +1,57 @@
+// Optional local game oracle. The player JAR never includes the test driver.
+def remapped=!minecraftUnobfuscated
+def playerJar=tasks.named(remapped?'remapJar':'jar')
+def loomClasses=remapped?playerJar.get().class.classLoader:plugins.getPlugin('net.fabricmc.fabric-loom').class.classLoader
+tasks.register('testHarnessMetadata') {
+    def output=layout.buildDirectory.dir('generated/testHarness')
+    outputs.dir(output)
+    doLast { def f=output.get().file('fabric.mod.json').asFile;f.parentFile.mkdirs();f.text='{"schemaVersion":1,"id":"generalsmc_release_tests","version":"1.0.0","name":"Private release test driver","environment":"client","depends":{"generalsmc":"*"}}' }
+}
+tasks.register('testHarnessJar', Jar) {
+    dependsOn 'clientClasses','testHarnessMetadata'
+    archiveClassifier='private-test-driver-dev'
+    destinationDirectory=layout.buildDirectory.dir('private-tests')
+    from(sourceSets.client.output) { include '**/*Bench*.class' }
+    from(layout.buildDirectory.dir('generated/testHarness'))
+}
+if(remapped)tasks.register('remapTestHarness', loomClasses.loadClass('net.fabricmc.loom.task.RemapJarTask')) {
+    dependsOn 'testHarnessJar'
+    inputFile=tasks.testHarnessJar.archiveFile
+    archiveClassifier='private-test-driver'
+    destinationDirectory=layout.buildDirectory.dir('private-tests')
+    // The separate driver invokes inherited Screen methods on our own subclasses.
+    // TinyRemapper needs those classes to resolve Minecraft method names as well.
+    classpath.from(sourceSets.client.compileClasspath,sourceSets.main.output,sourceSets.client.output)
+}
+tasks.register('productionSmoke', loomClasses.loadClass('net.fabricmc.loom.task.prod.ClientProductionRunTask')) {
+    // A previous game result is never evidence that a new launch succeeded.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf('The real game and its external engine must run every time') { true }
+    def driver=tasks.named(remapped?'remapTestHarness':'testHarnessJar')
+    dependsOn playerJar,driver
+    mods.setFrom(playerJar,driver)
+    useXVFB=false
+    def modern=project.property('minecraft_target')!='1.21.4'
+    runDir=layout.buildDirectory.dir(modern?'production-smoke/'+project.property('minecraft_target'):'production-smoke')
+    javaLauncher=javaToolchains.launcherFor { languageVersion=JavaLanguageVersion.of(minecraftJavaVersion) }
+    jvmArgs.addAll(modern?'-Dgeneralsmc.nativeVersionBench=true':'-Dgeneralsmc.nativeReleaseBench=true','-Dgeneralsmc.nativeTestSupport=true','-Dgeneralsmc.nativeFps=60','-Dgeneralsmc.nativeRenderDistance=6','-Dgeneralsmc.nativeSimulationDistance=6','-Dmax.bg.threads=4',"-Dgeneralsmc.evidence=${project.file('evidence').absolutePath}",'-Dgeneralsmc.testVersion='+project.property('minecraft_target'))
+    jvmArgs.add('-Dgeneralsmc.testLanguage='+(project.findProperty('nativeTestLanguage')?:'ru_ru'))
+    if(project.hasProperty('nativeUpgradeWorld'))jvmArgs.add('-Dgeneralsmc.upgradeWorld='+project.property('nativeUpgradeWorld'))
+    if(project.hasProperty('nativeUpgradeCurrent'))jvmArgs.add('-Dgeneralsmc.upgradeCurrent=true')
+    if(project.hasProperty('nativeStabilityJfr'))jvmArgs.addAll('-Dgeneralsmc.stabilityJfr=true',"-XX:StartFlightRecording=settings=profile,dumponexit=true,maxsize=128m,filename=${project.file('evidence/stability-host.jfr').absolutePath}")
+    if(project.hasProperty('nativeStabilityNetwork'))jvmArgs.add('-Dgeneralsmc.stabilityNetwork=true')
+    if(project.hasProperty('nativeStabilitySolo'))jvmArgs.add('-Dgeneralsmc.stabilitySolo=true')
+    if(project.hasProperty('nativeStabilitySeconds'))jvmArgs.add('-Dgeneralsmc.stabilitySeconds='+project.property('nativeStabilitySeconds'))
+    if(project.hasProperty('nativeShaderStackGuard'))jvmArgs.add('-Dgeneralsmc.shaderStackGuard='+project.property('nativeShaderStackGuard'))
+    if(project.hasProperty('nativeReloadCycles'))jvmArgs.add('-Dgeneralsmc.reloadCycles='+project.property('nativeReloadCycles'))
+    programArgs.addAll('--width','1280','--height',modern?'800':'720','--username','ReleaseTester')
+    def report=modern?'native-version-tests.json':project.hasProperty('nativeReleaseUx')?'release-details-tests.json':project.hasProperty('nativeNetworkPolish')?'network-polish-ux-tests.json':project.hasProperty('nativeOctoberBench')?'october-ux-tests.json':project.hasProperty('nativeRecoveryBench')?'recovery-ux-tests.json':'release-ux-tests.json'
+    if(project.hasProperty('nativeReleaseUx'))jvmArgs.add('-Dgeneralsmc.releaseUxOnly=true')
+    if(project.hasProperty('nativeReadmeCapture'))jvmArgs.addAll('-Dgeneralsmc.readmeCapture=true','-Dgeneralsmc.readmeUiOnly='+(project.property('nativeReadmeCapture')=='ui'))
+    if(project.hasProperty('nativeNetworkPolish'))jvmArgs.add('-Dgeneralsmc.networkPolishOnly=true')
+    if(project.hasProperty('nativeOctoberBench'))jvmArgs.add('-Dgeneralsmc.octoberOnly=true')
+    if(project.hasProperty('nativeRecoveryBench'))jvmArgs.add('-Dgeneralsmc.recoveryOnly=true')
+    doFirst { file('evidence').mkdirs();file('evidence/'+report).text='{"result":"RUNNING"}' }
+    doLast { def result=new groovy.json.JsonSlurper().parse(file('evidence/'+report));if(result.result!='PASS')throw new GradleException('Production JAR failed: '+result) }
+    timeout=java.time.Duration.ofSeconds(project.hasProperty('nativeStabilityNetwork')?(project.findProperty('nativeStabilitySeconds')?:'480').toInteger()+240:360)
+}

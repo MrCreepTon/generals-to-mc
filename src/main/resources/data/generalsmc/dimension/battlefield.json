@@ -1,0 +1,18 @@
+{
+  "type": "generalsmc:battlefield",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:desert",
+      "lakes": false,
+      "features": false,
+      "structure_overrides": [],
+      "layers": [
+        {"height": 1, "block": "minecraft:bedrock"},
+        {"height": 60, "block": "minecraft:sandstone"},
+        {"height": 2, "block": "minecraft:sandstone"},
+        {"height": 1, "block": "minecraft:sand"}
+      ]
+    }
+  }
+}
