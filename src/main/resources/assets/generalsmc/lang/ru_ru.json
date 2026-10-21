@@ -420,5 +420,7 @@
   "generalsmc.text.2bd9929": "Добавьте NPC или пригласите игроков. Выберите сторону и цвет, затем начните схватку.",
   "generalsmc.text.8016bee4": "Маркеры стартов, складов и нефти находятся во вкладке Generals творческого инвентаря. После старта F8 переключает Minecraft и RTS.",
   "generalsmc.text.f5e07c28": "Маркеры стартов, складов и нефти находятся во вкладке Generals творческого инвентаря. После старта %s переключает Minecraft и RTS.",
-  "key.category.generalsmc.controls": "Generals"
+  "key.category.generalsmc.controls": "Generals",
+  "generalsmc.text.9234a818": "Владелец: %s",
+  "generalsmc.text.c0cecb49": "Нейтральный"
 }

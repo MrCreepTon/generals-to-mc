@@ -383,5 +383,7 @@
   "Войдите в одиночный мир или на сервер с этим модом. Кнопка Generals есть в меню паузы.": "Enter a singleplayer world or a server with this mod. Find Generals in the pause menu.",
   "Добавьте NPC или пригласите игроков. Выберите сторону и цвет, затем начните схватку.": "Add AI or invite players. Choose factions and colours, then start the match.",
   "Маркеры стартов, складов и нефти находятся во вкладке Generals творческого инвентаря. После старта F8 переключает Minecraft и RTS.": "Start, supply and oil markers are in the Generals creative tab. After launch, F8 switches Minecraft and RTS.",
-  "Маркеры стартов, складов и нефти находятся во вкладке Generals творческого инвентаря. После старта %s переключает Minecraft и RTS.": "Army-start, supply and oil markers are in the Generals creative tab. After starting, %s switches Minecraft and RTS."
+  "Маркеры стартов, складов и нефти находятся во вкладке Generals творческого инвентаря. После старта %s переключает Minecraft и RTS.": "Army-start, supply and oil markers are in the Generals creative tab. After starting, %s switches Minecraft and RTS.",
+  "Владелец: %s": "Owner: %s",
+  "Нейтральный": "Neutral"
 }

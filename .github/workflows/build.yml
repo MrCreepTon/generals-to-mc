@@ -54,10 +54,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Restore native engine
+        id: native-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: build/native/windows-x86/generalszh.exe
+          key: native-windows-2022-x86-v1-${{ hashFiles('native/**', 'Build-Native.ps1', 'tools/prepare_engine.py', 'tools/patch*.py') }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        if: steps.native-cache.outputs.cache-hit != 'true'
         with:
           python-version: '3.12'
       - name: Build pinned engine without retail files
+        if: steps.native-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./Build-Native.ps1 -NoStage -NativeRoot (Join-Path $env:RUNNER_TEMP 'generals-native')
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

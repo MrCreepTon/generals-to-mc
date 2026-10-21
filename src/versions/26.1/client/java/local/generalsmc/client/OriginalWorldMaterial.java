@@ -14,7 +14,7 @@ final class OriginalWorldMaterial {
  static RenderType get(Identifier texture,int mode){return cache.computeIfAbsent(new Key(texture,mode),OriginalWorldMaterial::create);}
  static void clear(){cache.clear();pipelines.clear();}
  private static RenderType create(Key key){
-  var setup=RenderSetup.builder(pipelines.computeIfAbsent(key.mode,mode->pipeline(key.texture,mode))).withTexture("Sampler0",key.texture).useLightmap().useOverlay().sortOnUpload().bufferSize(1536).createRenderSetup();
+  var builder=RenderSetup.builder(pipelines.computeIfAbsent(key.mode,mode->pipeline(key.texture,mode))).withTexture("Sampler0",key.texture).sortOnUpload().bufferSize(1536);if((key.mode&0x800)!=0)builder.useLightmap().useOverlay();var setup=builder.createRenderSetup();
   return local.generalsmc.client.mixin.OriginalRenderTypeAccessor.create("generals_material_"+key.mode,setup);
  }
  private static RenderPipeline pipeline(Identifier texture,int mode){
@@ -23,7 +23,8 @@ final class OriginalWorldMaterial {
   var pipeline=RenderPipeline.builder().withLocation(Identifier.fromNamespaceAndPath("generalsmc","world/"+Integer.toHexString(mode)))
    .withVertexShader(base.getVertexShader()).withFragmentShader(base.getFragmentShader()).withVertexFormat(base.getVertexFormat(),base.getVertexFormatMode()).withCull(false)
    .withColorTargetState(new ColorTargetState(java.util.Optional.of(new BlendFunction(SOURCE[src],DEST[dst])),(mode&0x20000)==0||(mode&0x400)!=0?ColorTargetState.WRITE_ALL:ColorTargetState.WRITE_NONE));
-  base.getSamplers().forEach(pipeline::withSampler);base.getUniforms().forEach(u->{if(u.textureFormat()==null)pipeline.withUniform(u.name(),u.type());else pipeline.withUniform(u.name(),u.type(),u.textureFormat());});
+  base.getSamplers().stream().filter(name->(mode&0x800)!=0||name.equals("Sampler0")).forEach(pipeline::withSampler);base.getUniforms().forEach(u->{if(u.textureFormat()==null)pipeline.withUniform(u.name(),u.type());else pipeline.withUniform(u.name(),u.type(),u.textureFormat());});
+  if((mode&0x800)==0){pipeline.withVertexShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect")).withFragmentShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect"));if((mode&0x100)!=0)pipeline.withShaderDefine("GENERALS_ALPHA_TEST");}
   base.getShaderDefines().flags().forEach(pipeline::withShaderDefine);base.getShaderDefines().values().forEach((name,value)->pipeline.withShaderDefine(name,Float.parseFloat(value)));
   int depth=(mode>>12)&7;CompareOp[] ops={CompareOp.NEVER_PASS,CompareOp.LESS_THAN,CompareOp.EQUAL,CompareOp.LESS_THAN_OR_EQUAL,CompareOp.GREATER_THAN,CompareOp.NOT_EQUAL,CompareOp.GREATER_THAN_OR_EQUAL,CompareOp.ALWAYS_PASS};
   pipeline.withDepthStencilState(new DepthStencilState(ops[base.getDepthStencilState().depthTest()==CompareOp.GREATER_THAN_OR_EQUAL?switch(depth){case 1->4;case 3->6;case 4->1;case 6->3;default->depth;}:depth],(mode&0x200)!=0));

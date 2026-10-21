@@ -14,7 +14,7 @@ final class OriginalWorldMaterial {
  static RenderType get(Identifier texture,int mode){return cache.computeIfAbsent(new Key(texture,mode),OriginalWorldMaterial::create);}
  static void clear(){cache.clear();pipelines.clear();}
  private static RenderType create(Key key){
-  var setup=RenderSetup.builder(pipelines.computeIfAbsent(key.mode,mode->pipeline(key.texture,mode))).withTexture("Sampler0",key.texture).useLightmap().useOverlay().sortOnUpload().bufferSize(1536).createRenderSetup();
+  var builder=RenderSetup.builder(pipelines.computeIfAbsent(key.mode,mode->pipeline(key.texture,mode))).withTexture("Sampler0",key.texture).sortOnUpload().bufferSize(1536);if((key.mode&0x800)!=0)builder.useLightmap().useOverlay();var setup=builder.createRenderSetup();
   return local.generalsmc.client.mixin.OriginalRenderTypeAccessor.create("generals_material_"+key.mode,setup);
  }
  private static RenderPipeline pipeline(Identifier texture,int mode){
@@ -23,7 +23,8 @@ final class OriginalWorldMaterial {
   var pipeline=RenderPipeline.builder().withLocation(Identifier.fromNamespaceAndPath("generalsmc","world/"+Integer.toHexString(mode)))
    .withVertexShader(base.getVertexShader()).withFragmentShader(base.getFragmentShader()).withVertexFormat(base.getVertexFormat(),base.getVertexFormatMode()).withCull(false)
    .withBlend(new BlendFunction(SOURCE[src],DEST[dst])).withDepthWrite((mode&0x200)!=0).withColorWrite((mode&0x20000)==0||(mode&0x400)!=0);
-  base.getSamplers().forEach(pipeline::withSampler);base.getUniforms().forEach(u->{if(u.textureFormat()==null)pipeline.withUniform(u.name(),u.type());else pipeline.withUniform(u.name(),u.type(),u.textureFormat());});
+  base.getSamplers().stream().filter(name->(mode&0x800)!=0||name.equals("Sampler0")).forEach(pipeline::withSampler);base.getUniforms().forEach(u->{if(u.textureFormat()==null)pipeline.withUniform(u.name(),u.type());else pipeline.withUniform(u.name(),u.type(),u.textureFormat());});
+  if((mode&0x800)==0){pipeline.withVertexShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect")).withFragmentShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect"));if((mode&0x100)!=0)pipeline.withShaderDefine("GENERALS_ALPHA_TEST");}
   base.getShaderDefines().flags().forEach(pipeline::withShaderDefine);base.getShaderDefines().values().forEach((name,value)->pipeline.withShaderDefine(name,Float.parseFloat(value)));
   int depth=(mode>>12)&7;pipeline.withDepthTestFunction(switch(depth){case 1->DepthTestFunction.LESS_DEPTH_TEST;case 2->DepthTestFunction.EQUAL_DEPTH_TEST;case 4->DepthTestFunction.GREATER_DEPTH_TEST;case 7->DepthTestFunction.NO_DEPTH_TEST;default->DepthTestFunction.LEQUAL_DEPTH_TEST;});
   return pipeline.build();

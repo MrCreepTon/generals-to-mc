@@ -25,6 +25,7 @@ public final class NativeNetworkClient {
     private record Parts(int count,byte[][] chunks){}
     private static final Map<Integer,Parts> frames=new HashMap<>();
     private NativeNetworkClient(){}
+    public static String armyName(int nativePlayer){return spec==null?"":spec.armies().stream().filter(a->a.nativePlayer()==nativePlayer).map(NativeMatchSpec.Army::name).findFirst().orElse("");}
     public static boolean active(){return session!=null||spec!=null;}
     public static boolean controlling(){return active()&&controlling;}
     public static void resume(){if(session==null)return;try{controlling=true;session.send("MODE 1");Minecraft.getInstance().setScreen(new NativeWorldScreen(session));}catch(Exception error){fail(error);}}

@@ -71,7 +71,7 @@ processResources {
     filesMatching('fabric.mod.json') { expand(version: project.version, minecraft: profile.minecraft, loader: profile.loader, java: profile.java) }
 }
 tasks.named('jar') {
-    exclude '**/*Bench*.class'
+    exclude '**/*Bench*.class', '**/*.md'
 }
 tasks.register('releaseChecks', JavaExec) {
     dependsOn testClasses
@@ -85,6 +85,7 @@ tasks.register('verifyRelease', Exec) {
     commandLine(providers.environmentVariable('PYTHON').getOrElse('python'), '-X', 'utf8', 'tools/check_release.py', tasks.named(unobfuscated?'jar':'remapJar').get().archiveFile.get().asFile.absolutePath)
 }
 tasks.register('releaseSources', Zip) {
+    from('tools/watch_latency.py') { into 'tools' }
     from('tools') { include 'native_pointer_bench.py','native_path_budget_bench.py','native_material_bench.py','native_ai_bench.py','native_group_bench.py','native_lockstep_bench.py','native_retry_bench.py','native_feedback_bench.py','verify_native_patch.py'; into 'tools' }
     archiveFileName = "generals-minecraft-${project.version}-source.zip"
     destinationDirectory = layout.buildDirectory.dir('release')

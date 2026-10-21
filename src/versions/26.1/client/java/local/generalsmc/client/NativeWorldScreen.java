@@ -37,8 +37,7 @@ public final class NativeWorldScreen extends NativeFrameScreen {
     }
     private final NativeGuiLayer gui;
     private final NativeGuiLayer cursor;
-    private String minecraftLabel(){return L.s("В Minecraft")+" · "+GeneralsClient.nativeToggle.getTranslatedKeyMessage().getString();}
-    private boolean minecraftButton(double x,double y){return x>=width-font.width(minecraftLabel())-20&&x<=width-6&&y>=6&&y<=24;}
+    private int hoverActor;private long hoverSince;
     public NativeWorldScreen(NativeSession session){this(session,false);}
     public NativeWorldScreen(NativeSession session,boolean close){super(session,close);gui=new NativeGuiLayer(session.directory);cursor=new NativeGuiLayer(session.directory,true);}
     private boolean inPanel(double x,double y){int nx=(int)(x*input.width/width),ny=(int)(y*input.height/height);var view=NativeWorldView.current;
@@ -59,13 +58,24 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(GeneralsClient.noticeTicks>0){int w=Math.min(width-20,font.width(GeneralsClient.notice)+16);g.fill((width-w)/2,28,(width+w)/2,49,0xdd20242a);g.centeredText(font,GeneralsClient.notice,width/2,34,0xffffdd99);}
         var view=NativeWorldView.current;
         replayMobClick(view);
-        int back=width-font.width(minecraftLabel())-20;
-        g.fill(back,6,width-6,24,minecraftButton(x,y)?0xee59616d:0xcc252b33);
-        g.text(font,minecraftLabel(),back+7,11,0xffffffff);
+        drawOwnerTooltip(g,x,y);
         if(leftReleasePending&&view!=null&&view.state!=null&&view.state.consumed()>=cancelAfter&&!pendingCommand()){leftReleasePending=false;leftCancelPending=false;worldMouse(0x202,releaseX,releaseY,0);}
         if(view!=null&&System.currentTimeMillis()-lastProjection>=33){lastProjection=System.currentTimeMillis();var c=minecraft.gameRenderer.getMainCamera();var e=view.origin.nativePoint(c.position());var f=c.forwardVector();var l=c.leftVector();var u=c.upVector();try{input.send("HOST_VIEW "+e.x+" "+e.y+" "+e.z+" "+f.x()+" "+f.z()+" "+f.y()+" "+l.x()+" "+l.z()+" "+l.y()+" "+u.x()+" "+u.z()+" "+u.y()+" "+Math.tan(Math.toRadians(30))+" "+(double)width/height+" "+view.renderZoom/25);}catch(IOException err){onClose();}}
-        if(!GeneralsClient.blocksInput()&&!Boolean.getBoolean("generalsmc.nativeBench")&&!minecraftButton(x,y)&&!inPanel(x,y)&&System.currentTimeMillis()-lastWorldMotion>=40){lastWorldMotion=System.currentTimeMillis();worldMouse(0x200,x,y,middleDown?16:rightDown?2:nativeLeft?1:0);}
+        if(!GeneralsClient.blocksInput()&&!Boolean.getBoolean("generalsmc.nativeBench")&&!inPanel(x,y)&&System.currentTimeMillis()-lastWorldMotion>=40){lastWorldMotion=System.currentTimeMillis();worldMouse(0x200,x,y,middleDown?16:rightDown?2:nativeLeft?1:0);}
         if(cursor.available()){GLFW.glfwSetInputMode(minecraft.getWindow().handle(),GLFW.GLFW_CURSOR,GLFW.GLFW_CURSOR_HIDDEN);cursor.drawCursor(g,x,y);}
+    }
+    String ownerTooltip(int id){
+        var view=NativeWorldView.current;if(view==null)return "";var a=view.actor(id);
+        if(a==null||a.contained()||(a.externalKey()!=null&&!a.externalKey().isEmpty()))return "";
+        String name=NativeNetworkClient.armyName(a.owner());
+        if(name.isEmpty())name=a.owner()==view.state.localPlayerIndex()?minecraft.player.getName().getString():a.owner()<2?L.s("Нейтральный"):"NPC "+(a.owner()-1);
+        return L.s("Владелец: %s",name);
+    }
+    private void drawOwnerTooltip(GuiGraphicsExtractor g,int mx,int my){
+        if(inPanel(mx,my)||System.currentTimeMillis()-hoverSince<300)return;
+        String text=ownerTooltip(hoverActor);if(text.isEmpty())return;
+        int w=Math.min(width-12,font.width(text)+10),x=Math.clamp(mx+14,4,width-w-4),y=Math.clamp(my+18,4,height-18);
+        g.fill(x,y,x+w,y+15,0xdd171b20);g.text(font,font.plainSubstrByWidth(text,w-10),x+5,y+4,0xfff0d68a);
     }
     private void drawMobPortrait(GuiGraphicsExtractor g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.portrait()==null||view.state.selected()==null||view.state.selected().size()!=1)return;int selected=view.state.selected().get(0);var actor=view.state.objects().stream().filter(o->o.id()==selected&&o.externalKey()!=null&&!o.externalKey().isEmpty()).findFirst().orElse(null);if(actor==null)return;var entity=java.util.stream.StreamSupport.stream(minecraft.level.entitiesForRendering().spliterator(),false).filter(e->actor.externalKey().equals(e.getUUID().toString())).findFirst().orElse(null);if(!(entity instanceof net.minecraft.world.entity.LivingEntity living))return;var box=view.state.portrait();int left=box.x()*width/input.width,top=box.y()*height/input.height,right=(box.x()+box.width())*width/input.width,bottom=(box.y()+box.height()-36)*height/input.height;float previewHeight=living.getBbHeight();int size=Math.max(1,(int)((bottom-top)/(previewHeight*1.25)));net.minecraft.client.gui.screens.inventory.InventoryScreen.extractEntityInInventoryFollowsMouse(g,left,top,right,bottom,size,(previewHeight-living.getBbHeight())*.5f,(left+right)/2f,(top+bottom)/2f,living);}
     private void drawHealthBars(GuiGraphicsExtractor g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.healthBars()==null)return;
@@ -105,7 +115,7 @@ public final class NativeWorldScreen extends NativeFrameScreen {
     private boolean worldMouse(int message,double x,double y,int buttons) {
         worldPointerX=x;worldPointerY=y;
         var view=NativeWorldView.current;if(view==null||view.state==null)return false;
-        var point=hit(x,y);int id=actorAt(x,y);
+        var point=hit(x,y);int id=actorAt(x,y);if(id!=hoverActor){hoverActor=id;hoverSince=System.currentTimeMillis();}
         if(hoveredMob!=null&&id==0){prioritizeMob(hoveredMob);if(message==0x201){pendingMob=hoveredMob.getUUID();pendingMobX=x;pendingMobY=y;pendingAt=System.currentTimeMillis();return false;}if(message==0x200&&buttons==0)return false;}
         var actor=view.state.objects().stream().filter(o->o.id()==id).findFirst().orElse(null);
         // No ground hit means unloaded terrain/sky. Never issue a synthetic airborne movement order.
@@ -140,7 +150,6 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(GeneralsClient.blocksInput())return true;
         if(GeneralsClient.nativeMenu.matchesMouse(new net.minecraft.client.input.MouseButtonEvent(0,0,new net.minecraft.client.input.MouseButtonInfo(button,0)))){NativeRtsController.toggle();minecraft.setScreen(new GeneralsSetupScreen(null));return true;}
         if(GeneralsClient.nativeToggle.matchesMouse(new net.minecraft.client.input.MouseButtonEvent(0,0,new net.minecraft.client.input.MouseButtonInfo(button,0)))){NativeRtsController.toggle();return true;}
-        if(button==0&&minecraftButton(x,y)){NativeRtsController.toggle();return true;}
         int scan=RtsBindings.mouseScan(button);if(scan>0){scanInput(scan,true);return true;}
         button=RtsBindings.button(button);
         if(button==0||button==1)pendingMob=null;

@@ -34,14 +34,15 @@ final class NativeVersionNetworkBench {
         if(root!=null&&Files.exists(root.resolve("stop-test")))throw new IllegalStateException("Stopped by diagnostic controller");
         if(ticks>20*(SECONDS+180))throw new IllegalStateException("Network stability timeout "+stage+" "+NativeNetworkClient.message);
         if(mc.gui.screen() instanceof GeneralsFailureScreen)throw new IllegalStateException("Engine or network failure: "+NativeNetworkClient.message);
-        if(PEER){peer(mc);return;}
+        if(PEER){peer(mc);return;}if(stage==2)NativeVersionReuseBench.advanceOwnedWorld(mc,label->NativeVersionBench.click(mc,label));
         if(stage==0&&ticks>30){
-            root=NativeProfiles.root().resolve("private/stability-network-"+UUID.randomUUID());System.setProperty("generalsmc.nativeRoot",root.toString());
+            System.setProperty("generalsmc.testRoot",Path.of(System.getProperty("generalsmc.testRoot")).resolveSibling("network").toString());root=NativeVersionReuseBench.root(mc);
+            for(String stale:List.of("peer-exit","peer-result.json","peer-progress.json","host-progress.json","stop-test"))Files.deleteIfExists(root.resolve(stale));
             mc.options.pauseOnLostFocus=false;mc.options.guiScale().set(2);
-            work=CompletableFuture.runAsync(()->{try{NativeProfiles.connect("Stability Zero Hour","C:/Games/Generals ZH","C:/Games/Generals","",false,s->{});}catch(Exception e){throw new CompletionException(e);}});next(1);
+            work=CompletableFuture.runAsync(()->{try{NativeVersionReuseBench.connect();}catch(Exception e){throw new CompletionException(e);}});next(1);
         }else if(stage==1&&work.isDone()){
-            work.join();String name="GeneralsStability-"+System.currentTimeMillis();
-            mc.createWorldOpenFlows().createFreshLevel(name,new LevelSettings(name,GameType.CREATIVE,new LevelSettings.DifficultySettings(Difficulty.PEACEFUL,false,false),true,WorldDataConfiguration.DEFAULT),new WorldOptions(1263217L,false,false),lookup->lookup.lookupOrThrow(net.minecraft.core.registries.Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).value().createWorldDimensions(),mc.gui.screen());next(2);
+            work.join();String name="GeneralsStabilityQA";
+            if(!NativeVersionReuseBench.openExisting(mc,name))mc.createWorldOpenFlows().createFreshLevel(name,new LevelSettings(name,GameType.CREATIVE,new LevelSettings.DifficultySettings(Difficulty.PEACEFUL,false,false),true,WorldDataConfiguration.DEFAULT),new WorldOptions(1263217L,false,false),lookup->lookup.lookupOrThrow(net.minecraft.core.registries.Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).value().createWorldDimensions(),mc.gui.screen());next(2);
         }else if(stage==2&&mc.player!=null&&mc.getSingleplayerServer()!=null){
             var server=mc.getSingleplayerServer();listener=CompletableFuture.supplyAsync(()->{try{
                 var level=server.getLevel(GeneralsMod.ARENA);server.getPlayerList().getPlayer(mc.player.getUUID()).teleportTo(level,.5,64,.5,Set.of(),0,60,false);
@@ -65,6 +66,8 @@ final class NativeVersionNetworkBench {
             if(NativeWorldView.current.state.localPlayerIndex()!=2)throw new IllegalStateException("Wrong host army");
             if(NativeWorldView.current.state.objects().stream().noneMatch(a->a.owner()==(SOLO?3:4)&&a.structure()))throw new IllegalStateException("Allied NPC army missing");
             checks.add(SOLO?"Shared local authority starts the human army and an allied medium NPC":"Shared match starts with UUID-owned human armies and an allied medium NPC");
+            if(!SOLO&&!NativeNetworkClient.armyName(3).equals("StabilityPeer"))throw new IllegalStateException("Remote army ownership label missing");
+            if(!SOLO)checks.add("Remote ownership tooltip resolves the other human army to its actual Minecraft player name");
             motion.init(2);began=System.nanoTime();next(8);
         }else if(stage==8){
             if(!SOLO&&!peerProcess.isAlive())throw new IllegalStateException("Second client disconnected during soak");

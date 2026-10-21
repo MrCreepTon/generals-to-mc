@@ -56,7 +56,8 @@ def engine(path):
     shell = shutil.which('pwsh.exe') or shutil.which('powershell.exe')
     if not shell:
         raise ValueError('PowerShell is required to build the Windows engine')
-    run([shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ROOT / 'Build-Native.ps1', '-NoStage'])
+    run([shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ROOT / 'Build-Native.ps1',
+         '-NoStage', '-NativeRoot', ROOT / 'build/engine-cache'])
     return ROOT / 'build/native/windows-x86/generalszh.exe'
 
 

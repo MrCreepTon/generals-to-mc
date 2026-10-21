@@ -21,8 +21,9 @@ final class OriginalWorldMaterial {
    .withVertexShader(base.getVertexShader()).withFragmentShader(base.getFragmentShader()).withVertexBinding(0,base.getVertexFormatBinding(0)).withPrimitiveTopology(base.getPrimitiveTopology()).withCull(false)
    .withColorTargetState(new ColorTargetState(java.util.Optional.of(new BlendFunction(SOURCE[src],DEST[dst])),base.getColorTargetStates()[0].format(),(mode&0x20000)==0||(mode&0x400)!=0?ColorTargetState.WRITE_ALL:ColorTargetState.WRITE_NONE));
   base.getBindGroupLayouts().forEach(pipeline::withBindGroupLayout);
+  if((mode&0x800)==0){pipeline.withVertexShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect")).withFragmentShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect"));if((mode&0x100)!=0)pipeline.withShaderDefine("GENERALS_ALPHA_TEST");}
   base.getShaderDefines().flags().forEach(pipeline::withShaderDefine);base.getShaderDefines().values().forEach((name,value)->pipeline.withShaderDefine(name,Float.parseFloat(value)));
-  int depth=(mode>>12)&7;CompareOp[] ops={CompareOp.NEVER_PASS,CompareOp.LESS_THAN,CompareOp.EQUAL,CompareOp.LESS_THAN_OR_EQUAL,CompareOp.GREATER_THAN,CompareOp.NOT_EQUAL,CompareOp.GREATER_THAN_OR_EQUAL,CompareOp.ALWAYS_PASS};
+  int depth=(mode&0x20000)==0?3:(mode>>12)&7;CompareOp[] ops={CompareOp.NEVER_PASS,CompareOp.LESS_THAN,CompareOp.EQUAL,CompareOp.LESS_THAN_OR_EQUAL,CompareOp.GREATER_THAN,CompareOp.NOT_EQUAL,CompareOp.GREATER_THAN_OR_EQUAL,CompareOp.ALWAYS_PASS};
   pipeline.withDepthStencilState(new DepthStencilState(ops[base.getDepthStencilState().depthTest()==CompareOp.GREATER_THAN_OR_EQUAL?switch(depth){case 1->4;case 3->6;case 4->1;case 6->3;default->depth;}:depth],(mode&0x200)!=0));
   var setup=RenderSetup.builder(pipeline.build()).withTexture("Sampler0",key.texture).useLightmap().useOverlay().sortOnUpload().createRenderSetup();
   return local.generalsmc.client.mixin.OriginalRenderTypeAccessor.create("generals_material_"+mode,setup);

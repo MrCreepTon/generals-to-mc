@@ -420,5 +420,7 @@
   "generalsmc.text.2bd9929": "Add AI or invite players. Choose factions and colours, then start the match.",
   "generalsmc.text.8016bee4": "Start, supply and oil markers are in the Generals creative tab. After launch, F8 switches Minecraft and RTS.",
   "generalsmc.text.f5e07c28": "Army-start, supply and oil markers are in the Generals creative tab. After starting, %s switches Minecraft and RTS.",
-  "key.category.generalsmc.controls": "Generals"
+  "key.category.generalsmc.controls": "Generals",
+  "generalsmc.text.9234a818": "Owner: %s",
+  "generalsmc.text.c0cecb49": "Neutral"
 }
