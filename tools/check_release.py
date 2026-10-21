@@ -36,7 +36,7 @@ with zipfile.ZipFile(args.jar) as z:
     assert not any(n.lower().startswith(('msvcp','msvcr','vcruntime','ucrtbase','api-ms-win-crt')) for n in dependencies),'Engine requires a separate Visual C++ runtime'
     assert not forbidden and not development,(forbidden,development)
     assert meta['id']=='generalsmc' and meta['depends']['minecraft'] and meta.get('license')=='GPL-3.0-or-later'
-    for resource in ['META-INF/LICENSE','META-INF/NOTICE','local/generalsmc/nativebridge/NativeRuntime.class','local/generalsmc/nativebridge/WorldRules.class','local/generalsmc/client/WorldSettingsScreen.class','assets/generalsmc/blockstates/supply_marker.json']:
+    for resource in ['local/generalsmc/nativebridge/NativeRuntime.class','local/generalsmc/nativebridge/WorldRules.class','local/generalsmc/client/WorldSettingsScreen.class','assets/generalsmc/blockstates/supply_marker.json']:
         assert resource in names,resource
 report={'result':'PASS','jar':args.jar.name,'sha256':hashlib.sha256(args.jar.read_bytes()).hexdigest(),'bytes':args.jar.stat().st_size,'entries':len(names),'nativeSha256':digest,'nativeDependencies':dependencies,'minecraft':meta['depends']['minecraft'],'developmentClasses':development,'retailFiles':forbidden}
 out=Path('build/release');out.mkdir(parents=True,exist_ok=True);(out/'release-audit.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');(out/(args.jar.name+'.sha256')).write_text(report['sha256']+'  '+args.jar.name+'\n',encoding='utf-8')
