@@ -8,6 +8,7 @@
 #include "GameClient/InGameUI.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/Mouse.h"
+#include "GameClient/Display.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "Common/PlayerList.h"
@@ -33,6 +34,7 @@ DWORD guiStarted=0,lastGuiCost=0;
 bool guiReplay = false;
 struct HealthBar{unsigned int id;float x,y,z,dx,dy,width,height,ratio;unsigned int color,outline;};
 std::vector<HealthBar> healthBars;
+std::vector<unsigned int> guiPixels;
 int guiClockCount=0,guiClockPercent=-1;
 HCURSOR cursorHandle=nullptr;
 int cursorType=0,cursorFrames=1;
@@ -156,17 +158,19 @@ void beginGuiLayer() {
 void endGuiLayer() {
     if (guiReplay || !previousTarget) return;
     auto device = DX8Wrapper::_Get_D3D_Device8();
+    if(TheMouse)TheMouse->drawTooltip();
     drawSelectedMobCaption();
+    TheDisplay->endBatch();
     D3DLOCKED_RECT pixels;
     D3DSURFACE_DESC desc; gui->GetDesc(&desc);
-    std::vector<unsigned int> black(desc.Width * desc.Height);
+    guiPixels.resize(desc.Width * desc.Height);auto& black=guiPixels;
     if (SUCCEEDED(gui->LockRect(&pixels, nullptr, D3DLOCK_READONLY))) {
         for (UINT row = 0; row < desc.Height; ++row) memcpy(black.data() + row * desc.Width, static_cast<const char*>(pixels.pBits) + row * pixels.Pitch, desc.Width * 4);
         gui->UnlockRect();
         // Original D3D8 GUI shaders do not preserve destination alpha. Recover coverage
         // from the same original GUI drawn against black and white, not a chroma key.
         device->Clear(0, nullptr, D3DCLEAR_TARGET, 0xffffffff, 1, 0);
-        guiReplay = true; TheInGameUI->draw(); drawSelectedMobCaption(); guiReplay = false;
+        guiReplay = true; TheInGameUI->draw(); if(TheMouse)TheMouse->drawTooltip(); drawSelectedMobCaption(); TheDisplay->endBatch(); guiReplay = false;
         if (SUCCEEDED(gui->LockRect(&pixels, nullptr, D3DLOCK_READONLY))) {
             for (UINT row = 0; row < desc.Height; ++row) {
                 auto white = reinterpret_cast<const unsigned int*>(static_cast<const char*>(pixels.pBits) + row * pixels.Pitch);

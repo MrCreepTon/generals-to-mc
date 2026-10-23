@@ -42,3 +42,9 @@ class Object;class DamageInfo;struct AICommandParms;
 namespace zhmc {bool isExternalObject(unsigned int id);bool externalDamage(Object* object,DamageInfo* damage);void hostExplosion(const Coord3D* position,float radius,float amount,unsigned int source,int damageType);}
 namespace zhmc {void hostPlayerCommand(Object* object,const AICommandParms* command);}
 namespace zhmc {bool hostTerrainKnown(const Coord3D* position);}
+
+namespace zhmc {bool hostProjectileMoved(Object* object,const Coord3D* previous);}
+
+namespace zhmc {bool hostEmpAffectsNative();void hostEMP(const Coord3D*,float,unsigned int,unsigned int);}
+
+namespace zhmc {bool hostBlockImpact();void hostAudioMeter(float volume);}

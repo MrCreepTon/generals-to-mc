@@ -22,7 +22,8 @@ public final class NativeNetworkServer {
     public record MarkerDetails(MapPoint marker,WorldSiteStore.Start start,boolean editable){}
     public record MarkerIndex(List<MapPoint> points,boolean teleportAllowed){}
     static boolean ownsWorld(ServerPlayer p){return p.hasPermissions(2)||p.getUUID().equals(p.getServer().getSingleplayerProfile()==null?null:p.getServer().getSingleplayerProfile().getId());}
-    private static void sendRules(ServerPlayer p){send(p,"rules",new RulesState(WorldRules.get(p.serverLevel()).values(),ownsWorld(p),busy()||WorldCombat.busy()));}
+    static boolean editsRules(ServerPlayer p){return p.level().getServer().isDedicatedServer()?ownsWorld(p)&&(leader==null||leader.equals(p.getUUID())):p.getUUID().equals(p.getServer().getSingleplayerProfile()==null?null:p.getServer().getSingleplayerProfile().getId());}
+    private static void sendRules(ServerPlayer p){send(p,"rules",new RulesState(WorldRules.get(p.serverLevel()).values(),editsRules(p),busy()||WorldCombat.busy()));}
     private static final Map<UUID,Member> members=new LinkedHashMap<>();
     private static MinecraftServer server;private static ServerLevel level;private static UUID leader;
     private static NativeProfiles.Profile profile;private static String fingerprint="",message="";
@@ -59,8 +60,8 @@ public final class NativeNetworkServer {
         if(MarkerService.receive(p,data,kind))return;
         if(kind.equals("mob_priority")){UUID id=UUID.fromString(str(data,"mob"));if(match!=null)match.prioritizeMob(p.getUUID(),id);else if(ownsWorld(p))WorldCombat.prioritize(p.serverLevel(),id);return;}
         if(kind.equals("rules_change")){
-            if(!ownsWorld(p))throw new IOException(local.generalsmc.LocalText.token("Правила меняет владелец мира или оператор сервера"));
-            String key=str(data,"key");if(key.equals("naturalResources")&&(busy()||WorldCombat.busy()))throw new IOException(local.generalsmc.LocalText.token("Расположение ресурсов меняется перед началом схватки"));
+            if(!editsRules(p))throw new IOException(local.generalsmc.LocalText.token("Правила меняет только хозяин схватки"));
+            String key=str(data,"key");if((key.equals("naturalResources")||key.equals("prepareStarts"))&&(busy()||WorldCombat.busy()))throw new IOException(local.generalsmc.LocalText.token("Меняется перед началом схватки"));
             var rules=WorldRules.get(p.serverLevel());rules.update(rules.values().toggle(key));
             for(var observer:p.getServer().getPlayerList().getPlayers())if(observer.serverLevel()==p.serverLevel())sendRules(observer);return;
         }

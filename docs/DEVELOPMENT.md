@@ -55,7 +55,7 @@ Java 21 is used for 1.21.x and Java 25 for 26.x. Pre-26 targets use remapping; 2
 
 ## Checks
 
-`stageRelease` runs 29 shared-logic checks and audits the JAR. It checks the engine SHA256/imports and excludes game assets and test drivers. Real-client tests run separately:
+`stageRelease` runs 38 shared-logic checks and audits the JAR. It checks the engine SHA256/imports and excludes game assets and test drivers. Real-client tests run separately:
 
 ```powershell
 .\gradlew.bat productionSmoke '-Pminecraft_target=1.21.11' -PnativeFeedbackRegression -PnativeTestLanguage=en_us
@@ -71,6 +71,8 @@ python tools/verify_native_patch.py
 
 README screenshots: run `productionSmoke -Pminecraft_target=1.21.4 -PnativeReleaseUx -PnativeReadmeCapture -PnativeTestLanguage=en_us`. Use `ru_ru` for Russian or `-PnativeReadmeCapture=ui` to skip the battle. Frames are saved to `build/production-smoke/screenshots/readme-*.png`; the capture driver is excluded from player JARs.
 
+F8/Peaceful regression on 1.21.4: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky`. It tests a lost Alt release, paused difficulty settings, fresh mouse selection/movement and native tooltip pixels. Omit `-PnativeResumeSticky` to repeat four ordinary F8 cycles.
+
 Two-client 1.21.4 check: `runClient -Pminecraft_target=1.21.4 -PnativeNetworkBench -PnativeNetworkDualOnly -PnativeFakeLatency`. It tests commands, simulation rate and recovery under 0/100/300/0 ms RTT with jitter.
 
 26.3 stability check: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=480`. Add `-PnativeStabilitySolo` for a single shared-simulation client or `-PnativeStabilityJfr` for Java profiling. Use ordinary `productionSmoke -PnativeReloadCycles=12` for resource reloads.
@@ -80,6 +82,10 @@ The short effects, transport, input and marker check is `productionSmoke -Pminec
 Dependency source remapping is disabled to speed up normal builds. Enable `-Dfabric.loom.ci=false` for IDE source browsing.
 
 
+Start preparation and terrain damage: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky -PnativeWorldPolish`. Checks preparation, container rejection without partial edits, and normal/forced attacks.
+
+Movement: `python tools/native_navigation_bench.py --exe build/native/windows-x86/generalszh.exe --lab <QA-lab>`. Requires an existing QA profile; installations and worlds are reused.
+
 ## Latency diagnostics
 
 During a match, run `python tools/watch_latency.py --seconds 30`. Use `--root build/qa/native` for the private version tests. The script only reads snapshots; it writes no files.
@@ -88,6 +94,10 @@ During a match, run `python tools/watch_latency.py --seconds 30`. Use `--root bu
 - Growing `ipc_pending` means local commands are waiting for the native process. It is not network ping.
 - Growing `snapshot_age` means snapshots have stopped arriving. Check the session log and `error`.
 - If these stay normal but Minecraft frame time spikes, inspect client rendering with F3 and a short F3+L recording.
+
+To capture a shareable report, run `python tools/watch_latency.py --seconds 30 --capture latency-report.json` and issue a few move/attack orders. Keep playing until it finishes. This writes a small request and result in the active session, plus the report you named. It contains frame and click timings, Java/MC/mod versions and CPU/heap counts; no world, installation or player names.
+
+`frameIntervalMs` shows Minecraft pacing; `sceneIngestMs` and `meshSubmitMs` show scene processing and submission (deferred GPU work is excluded). `clickHandlingMs` measures picking and sending; `localIpcAckMs` ends when the native process consumes input, before a unit finishes turning or a network turn is committed. `nativeUpdateMs`, `nativeGuiMs` and `nativePublishMs` separate the engine, GUI capture and snapshot publication; these stages can overlap, so do not add them. Compare solo and multiplayer reports on the affected machine. On older builds, the report still includes native samples; client timings require beta.13 or later. F3+L supplies a separate Minecraft recording if frame times spike.
 
 For a controlled two-client check on 26.3: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=120`. It injects 0/100/300/0 ms RTT with jitter in the private peer connection, then checks recovery. `-PnativeStabilityJfr` adds bounded Java recordings. Test worlds/profiles use fixed directories; do not copy the project or game installation between runs.
 
@@ -100,8 +110,8 @@ For a controlled two-client check on 26.3: `productionSmoke -Pminecraft_target=2
 4. Push a matching tag, for example:
 
 ```sh
-git tag v0.2.0-beta.9
-git push origin v0.2.0-beta.9
+git tag v0.2.0-beta.13
+git push origin v0.2.0-beta.13
 ```
 
 5. Open **Releases**, review the generated draft and select **Publish release**. Tags containing `-beta` produce prereleases.

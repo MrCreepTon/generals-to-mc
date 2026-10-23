@@ -38,6 +38,8 @@ def run(args):
 def gradle(task, target=None, native=None):
     command = [ROOT / 'gradlew.bat'] if os.name == 'nt' else ['bash', ROOT / 'gradlew']
     command += [task, '--console=plain']
+    if task == 'productionSmoke':
+        command += ['--no-daemon']
     if target:
         command += ['-Pminecraft_target=' + target]
     if native:

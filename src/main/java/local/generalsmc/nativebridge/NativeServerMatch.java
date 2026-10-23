@@ -27,6 +27,7 @@ public final class NativeServerMatch implements AutoCloseable {
     private NativeMatchSpec spec;private final Map<UUID,Peer> peers=new LinkedHashMap<>();
     private NativeSession.State state;private NativeMatchSpec.Position origin;
     private List<TerrainExporter.Region> bootRegions=List.of();private final List<TerrainExporter.Column> bootColumns=new ArrayList<>();
+    private StartPreparation.Plan preparation;private boolean prepared;
     private int phase,bootCursor,tick,startedTick,nextFrame,initialFrame;private long bootRevision;
     private boolean closed;private TerrainSynchronizer terrain;private ResourceSynchronizer resources;private SiteSynchronizer sites;private WorldCombat combat;
     private static final net.minecraft.server.level.TicketType<UUID> BOOT=net.minecraft.server.level.TicketType.create("generalsmc_start",UUID::compareTo);
@@ -92,12 +93,14 @@ public final class NativeServerMatch implements AutoCloseable {
                 bootRegions=List.copyOf(regions);initialFrame=state.frame();nextFrame=initialFrame;transport.origin(origin,level.dimension().location().toString());phase=2;return;
             }
             if(phase==2){
+                if(preparation!=null){if(!preparation.apply(level))return;preparation=null;bootCursor=0;bootColumns.clear();}
                 if(tick>2400)throw new IOException(local.generalsmc.LocalText.token("Мир или участники не подготовились за 120 секунд"));
                 if(bootCursor<bootRegions.size()){
                     var values=TerrainExporter.sample(level,bootRegions.get(bootCursor));if(values.size()==1024){bootColumns.addAll(values);bootCursor++;if(bootCursor%3==0)transport.progress(local.generalsmc.LocalText.token("Подготовка местности: ")+bootCursor+" / "+bootRegions.size());}return;
                 }
                 if(peers.values().stream().anyMatch(p->!p.ready))return;
                 for(var p:peers.values())if(!sharedLocal&&(p.frame!=initialFrame||p.crc!=state.lockstepCrc()))throw new IOException(local.generalsmc.LocalText.token("Данные игры у участников различаются"));
+                if(!prepared&&WorldRules.get(level).values().prepareStarts()){preparation=StartPreparation.plan(level,spec,state);prepared=true;transport.progress(local.generalsmc.LocalText.token("Подготовка стартовых площадок…"));return;}
                 validateStarts();session.send("INIT_WORLD");
                 for(int at=0;at<bootColumns.size();){int count=Math.min(1024,bootColumns.size()-at);String text;while((text=TerrainExporter.command(bootRevision+1,bootColumns.subList(at,at+count))).length()>60000)count/=2;session.send(text);bootRevision++;at+=count;}
                 for(var a:spec.armies())session.send("REBASE_PLAYER "+a.nativePlayer()+" "+((a.start().x()+.5-origin.x())*WorldScale.UNITS_PER_BLOCK)+" "+((a.start().z()+.5-origin.z())*WorldScale.UNITS_PER_BLOCK)+" "+((a.start().y()-origin.y())*WorldScale.UNITS_PER_BLOCK));
@@ -129,7 +132,7 @@ public final class NativeServerMatch implements AutoCloseable {
         var columns=new HashMap<Long,TerrainExporter.Column>();for(var c:bootColumns)columns.put(((long)c.x()<<32)|(c.y()&0xffffffffL),c);
         for(var army:spec.armies()){
             var base=state.objects().stream().filter(a->a.owner()==army.nativePlayer()&&a.structure()).findFirst().orElseThrow(()->new IOException(local.generalsmc.LocalText.token("У стороны нет стартового здания")));
-            int rx=(int)Math.ceil(base.geometryMajor()/WorldScale.UNITS_PER_BLOCK),rz=(int)Math.ceil(base.geometryMinor()/WorldScale.UNITS_PER_BLOCK),x=army.start().x()-origin.x(),z=army.start().z()-origin.z();var center=columns.get(((long)x<<32)|(z&0xffffffffL));
+            double cosine=Math.abs(Math.cos(base.orientation())),sn=Math.abs(Math.sin(base.orientation()));int rx=(int)Math.ceil((cosine*base.geometryMajor()+sn*base.geometryMinor())/WorldScale.UNITS_PER_BLOCK),rz=(int)Math.ceil((sn*base.geometryMajor()+cosine*base.geometryMinor())/WorldScale.UNITS_PER_BLOCK),x=army.start().x()-origin.x(),z=army.start().z()-origin.z();var center=columns.get(((long)x<<32)|(z&0xffffffffL));
             if(center==null)throw new IOException(local.generalsmc.LocalText.token("Стартовая площадка не загрузилась"));
             for(int dx=-rx;dx<=rx;dx++)for(int dz=-rz;dz<=rz;dz++){var c=columns.get(((long)(x+dx)<<32)|((z+dz)&0xffffffffL));if(c==null||c.type()!=0||Math.abs(c.height()-center.height())>.01||c.clearance()<base.geometryHeight())throw new IOException(local.generalsmc.LocalText.token("Для базы ")+army.name()+local.generalsmc.LocalText.token(" нужна ровная свободная площадка. Перенесите стартовый маркер"));}
         }

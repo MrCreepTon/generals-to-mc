@@ -30,7 +30,10 @@ public final class NativeSession implements AutoCloseable {
     public record Control(int id,int x,int y,int width,int height,String command,boolean enabled) {}
     public record ResourceTemplate(String name,float major,float minor,float height) {}
     public record Resource(String key,int id,int cash) {}
-    public record CombatEvent(long sequence,String target,int source,double amount,double x,double y,double z,double radius,int damageType,boolean explosive) {}
+    public record CombatEvent(long sequence,String target,int source,double amount,double x,double y,double z,double radius,int damageType,boolean explosive,boolean forcedAttack,int disabledFrames) {
+        public CombatEvent(long seq,String target,int source,double amount,double x,double y,double z,double radius,int type,boolean explosive,boolean forced){this(seq,target,source,amount,x,y,z,radius,type,explosive,forced,0);}
+        public CombatEvent(long seq,String target,int source,double amount,double x,double y,double z,double radius,int type,boolean explosive){this(seq,target,source,amount,x,y,z,radius,type,explosive,false,0);}
+    }
     public record TeamColor(int id,String label,long color) {}
     public record HealthBar(int id,double x,double y,double z,double dx,double dy,double width,double height,double ratio,long color,long outline) {}
     public record SpecialPower(int object,String name,int readyFrame,boolean ready) {}
@@ -39,7 +42,7 @@ public final class NativeSession implements AutoCloseable {
                         long terrainRevision, int terrainColumns, List<String> factions, List<String> maps, List<Actor> objects, int localCash,
                         int localPlayerIndex, int terrainExtentX, int terrainExtentY,
                         List<Integer> selected, String pendingCommand, boolean pendingBuild, int stopMessages, String pointerCommand, String pendingBuildType,List<Control> controls,
-                        long radarRevision,float radarMinX,float radarMinY,float radarSpan,long cameraSerial,double cameraTargetX,double cameraTargetY,double scrollX,double scrollY,boolean scrolling,boolean forceAttack,int attackMessages,ResourceTemplate resourceTemplate,List<Resource> resources,int exportedParticles,int exportedDecals,int repairedUV,double placementAngle,boolean placementAnchored,int guiClockCount,int guiClockPercent,int testFXParticles,long rotationSerial,float cameraAngle,double healthUnitsPerPoint,List<CombatEvent> combatEvents,boolean pagedWorld,int pathPages,int partitionPages,List<HealthBar> healthBars,List<String> playableFactions,List<TeamColor> colors,int teamColor,long localPlayerColor,Control portrait,boolean hostAudioConfigured,boolean musicPlaying,double musicVolume,double soundVolume,double speechVolume,boolean audioEnabled,int audio2DSamples,int audio3DSamples,int audio2DUsed,int audio3DUsed,List<SpecialPower> specialPowers,List<Resource> sites,boolean lockstep,long lockstepCrc,long lockstepOutgoing,String lockstepError,int exportedLasers,int generalRank,int generalExperience,List<ArmyStatus> armyStatus,int lockstepCrcFrame,Map<String,String> factionNames) {}
+                        long radarRevision,float radarMinX,float radarMinY,float radarSpan,long cameraSerial,double cameraTargetX,double cameraTargetY,double scrollX,double scrollY,boolean scrolling,boolean forceAttack,int attackMessages,ResourceTemplate resourceTemplate,List<Resource> resources,int exportedParticles,int exportedDecals,int repairedUV,double placementAngle,boolean placementAnchored,int guiClockCount,int guiClockPercent,int testFXParticles,long rotationSerial,float cameraAngle,double healthUnitsPerPoint,List<CombatEvent> combatEvents,boolean pagedWorld,int pathPages,int partitionPages,List<HealthBar> healthBars,List<String> playableFactions,List<TeamColor> colors,int teamColor,long localPlayerColor,Control portrait,boolean hostAudioConfigured,boolean musicPlaying,double musicVolume,double soundVolume,double speechVolume,boolean audioEnabled,int audio2DSamples,int audio3DSamples,int audio2DUsed,int audio3DUsed,List<SpecialPower> specialPowers,List<Resource> sites,boolean lockstep,long lockstepCrc,long lockstepOutgoing,String lockstepError,int exportedLasers,int generalRank,int generalExperience,List<ArmyStatus> armyStatus,int lockstepCrcFrame,Map<String,String> factionNames,Map<String,Integer> startRadii,int engineUpdateMs,int guiCaptureMs,int publishMs) {}
     private static final Gson JSON = new Gson();
     public NativeSession(Path root, boolean graphics) throws IOException {
         this(root,graphics,800,600);
@@ -101,7 +104,7 @@ public final class NativeSession implements AutoCloseable {
         sequence = next;
         return next;
     }
-    private static boolean worldCommand(String command){String verb=command.split("\\s",2)[0];return Set.of("BEGIN_SHARED_AUTHORITY","INIT_WORLD","TERRAIN","TERRAIN2","TERRAIN3","HOST_BATCH","HOST_DAMAGE","MOB_SYNC","MOB_DROP","MOB_KILLED","COMBAT_ACK","RESOURCE","RESOURCE_REMOVE","SITE","SITE_REMOVE","REBASE_PLAYER","PLAYER_DEFEAT").contains(verb);}
+    private static boolean worldCommand(String command){String verb=command.split("\\s",2)[0];return Set.of("HOST_EMP_RULES","BEGIN_SHARED_AUTHORITY","INIT_WORLD","TERRAIN","TERRAIN2","TERRAIN3","HOST_BATCH","HOST_DAMAGE","MOB_SYNC","MOB_DROP","MOB_KILLED","COMBAT_ACK","RESOURCE","RESOURCE_REMOVE","SITE","SITE_REMOVE","REBASE_PLAYER","PLAYER_DEFEAT").contains(verb);}
     public synchronized String commitFrame(int frame,List<String> playerRecords)throws IOException{
         if(mode!=Mode.AUTHORITY&&mode!=Mode.SHARED_AUTHORITY)throw new IOException("Only the server can commit a native frame");
         var text=new StringBuilder("FRAME ").append(frame).append('\n');long token=0;
@@ -124,6 +127,10 @@ public final class NativeSession implements AutoCloseable {
         var file=directory.resolve("checks.bin");if(!Files.isRegularFile(file))return java.util.OptionalLong.empty();
         try(var channel=java.nio.channels.FileChannel.open(file,StandardOpenOption.READ)){var data=java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN);channel.position((frame%256)*16L);if(channel.read(data)!=16)return java.util.OptionalLong.empty();data.flip();int first=data.getInt();long crc=Integer.toUnsignedLong(data.getInt());int last=data.getInt();return first==frame&&last==frame?java.util.OptionalLong.of(crc):java.util.OptionalLong.empty();}
     }
+    // A bounded diagnostic window survives server COMBAT_ACK between two rendered frames.
+    private final ArrayDeque<CombatEvent> recentCombat=new ArrayDeque<>();
+    private long recentCombatSequence;
+    public synchronized List<CombatEvent> recentCombatEvents(){return List.copyOf(recentCombat);}
     public synchronized State read() throws IOException {
         if (!process.isAlive()) throw new IOException("Native engine exited " + process.exitValue());
         var file = directory.resolve("state.json");
@@ -133,7 +140,9 @@ public final class NativeSession implements AutoCloseable {
         try {
             var stamp=Files.getLastModifiedTime(file);if(stamp.equals(stateStamp))return lastState;
             State value=JSON.fromJson(Files.readString(file), State.class);
-            if(value!=null){lastState=value;stateStamp=stamp;synchronized(this){while(!queuedAcks.isEmpty()&&queuedAcks.peek().frame<=value.frame())acknowledgedWorld=Math.max(acknowledgedWorld,queuedAcks.remove().token);prune(value);}}
+            if(value!=null){
+                if(value.combatEvents()!=null)for(var event:value.combatEvents())if(event.sequence()>recentCombatSequence){recentCombatSequence=event.sequence();if(recentCombat.size()==128)recentCombat.removeFirst();recentCombat.add(event);}
+                lastState=value;stateStamp=stamp;synchronized(this){while(!queuedAcks.isEmpty()&&queuedAcks.peek().frame<=value.frame())acknowledgedWorld=Math.max(acknowledgedWorld,queuedAcks.remove().token);prune(value);}}
         } catch(NoSuchFileException | AccessDeniedException transientReplace) { }
         return lastState;
     }

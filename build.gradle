@@ -86,7 +86,7 @@ tasks.register('verifyRelease', Exec) {
 }
 tasks.register('releaseSources', Zip) {
     from('tools/watch_latency.py') { into 'tools' }
-    from('tools') { include 'native_pointer_bench.py','native_path_budget_bench.py','native_material_bench.py','native_ai_bench.py','native_group_bench.py','native_lockstep_bench.py','native_retry_bench.py','native_feedback_bench.py','verify_native_patch.py'; into 'tools' }
+    from('tools') { include 'native_emp_bench.py','native_navigation_bench.py','native_pointer_bench.py','native_path_budget_bench.py','native_material_bench.py','native_ai_bench.py','native_group_bench.py','native_lockstep_bench.py','native_retry_bench.py','native_feedback_bench.py','verify_native_patch.py'; into 'tools' }
     archiveFileName = "generals-minecraft-${project.version}-source.zip"
     destinationDirectory = layout.buildDirectory.dir('release')
     from('.') { include 'src/**','native/**','tools/prepare_engine.py','tools/stage_native.py','tools/patch*.py','tools/check_release.py','tools/draft_release.py','tools/build.py','tools/ci_versions.py','tools/generate_marker_assets.py','tools/localize_ui.py','tools/ui_translations.json','Build-Native.ps1','gradle/**','gradlew','gradlew.bat','*.gradle','gradle.properties','versions/**','.github/**','.gitignore','.gitattributes'; exclude '**/__pycache__/**' }

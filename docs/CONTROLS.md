@@ -26,15 +26,19 @@ Change mode, menu and mouse bindings in **Minecraft Options → Controls → Gen
 
 Minecraft volume sliders control master, music, blocks (effects) and voice (unit lines). While Generals is running with audio, Minecraft background music stays paused, including after F8 or opening a menu. It returns when the match or engine stops.
 
-**World and interactions** and lobby **Rules** control fire, block damage, mobs, resources, general experience and victory. Owners/operators change server rules. Experience counts actual mob kills by the army. With building victory enabled, losing all key buildings eliminates an army; the remaining alliance wins. **Start RTS here** has no such victory condition.
+**Rules** groups settings into Combat, Mobs, World and EMP. Only the world host can change them; on a dedicated server, an operator can configure rules before a lobby opens, then its host controls them. Terrain damage defaults to force attack only: ordinary shots hurt units without digging craters. **World → Starting areas → Prepare** levels and clears starts before the match; containers and protected blocks stop preparation. Experience counts actual mob kills by the army. With building victory enabled, losing all key buildings eliminates an army; the remaining alliance wins. **Start RTS here** has no such victory condition.
+
+**Rules → EMP** controls vehicles, mobs and redstone separately. Original EMP weapons keep their native vehicle behaviour. In Minecraft, a pulse temporarily stops mob AI and suppresses standard redstone signals; it does not replace blocks or save a permanent NoAI flag. Modded circuitry may use different signal APIs.
 
 ## Lobby and markers
 
-Players and NPCs use the same field order: faction, colour, team, start. NPC difficulty and removal are in the row header. Left click cycles team/difficulty forward; right click cycles backward. The server resolves random choices at match start.
+With Modern UI installed, the lobby uses a Generals-style roster and map preview. Click a cell to choose a general, colour or team; click the NPC name to change its difficulty or remove it. On smaller screens the map opens through **Positions**. Without Modern UI, the standard Minecraft layout remains available.
+
+In the standard Minecraft layout, left click cycles team/difficulty forward and right click cycles backward. The server resolves random choices at match start.
 
 **Positions** selects starts; **Resources** shows placed supply and oil markers. Drag to pan, scroll to zoom, use **My position** to recenter or **All points** to fit markers.
 
-Markers are in the **Generals** creative tab. Interact with an army-start marker to set its player/NPC, faction, team and difficulty. Oil derricks use the original Generals capture ability. **Find markers** opens saved marker details, notes, map, deletion and permission-checked teleport, including unloaded areas. Marker beams appear in ordinary Minecraft.
+Markers are in the **Generals** creative tab. Interact with an army-start marker to set its player/NPC, faction, team and difficulty. Oil derricks use the original Generals capture ability. **Find markers** opens saved marker details, notes, map, deletion and permission-checked teleport, including unloaded areas. Marker beams appear in ordinary Minecraft. Aim at a start marker, or hold its item, to see a clearing outline sized for the largest starting building and its rotation.
 
 Clicking a mob without an armed selection shows its icon. With armed units selected, it issues a normal attack; Ctrl is not required.
 

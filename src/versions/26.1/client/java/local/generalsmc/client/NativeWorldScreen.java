@@ -37,7 +37,6 @@ public final class NativeWorldScreen extends NativeFrameScreen {
     }
     private final NativeGuiLayer gui;
     private final NativeGuiLayer cursor;
-    private int hoverActor;private long hoverSince;
     public NativeWorldScreen(NativeSession session){this(session,false);}
     public NativeWorldScreen(NativeSession session,boolean close){super(session,close);gui=new NativeGuiLayer(session.directory);cursor=new NativeGuiLayer(session.directory,true);}
     private boolean inPanel(double x,double y){int nx=(int)(x*input.width/width),ny=(int)(y*input.height/height);var view=NativeWorldView.current;
@@ -58,24 +57,10 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(GeneralsClient.noticeTicks>0){int w=Math.min(width-20,font.width(GeneralsClient.notice)+16);g.fill((width-w)/2,28,(width+w)/2,49,0xdd20242a);g.centeredText(font,GeneralsClient.notice,width/2,34,0xffffdd99);}
         var view=NativeWorldView.current;
         replayMobClick(view);
-        drawOwnerTooltip(g,x,y);
         if(leftReleasePending&&view!=null&&view.state!=null&&view.state.consumed()>=cancelAfter&&!pendingCommand()){leftReleasePending=false;leftCancelPending=false;worldMouse(0x202,releaseX,releaseY,0);}
         if(view!=null&&System.currentTimeMillis()-lastProjection>=33){lastProjection=System.currentTimeMillis();var c=minecraft.gameRenderer.getMainCamera();var e=view.origin.nativePoint(c.position());var f=c.forwardVector();var l=c.leftVector();var u=c.upVector();try{input.send("HOST_VIEW "+e.x+" "+e.y+" "+e.z+" "+f.x()+" "+f.z()+" "+f.y()+" "+l.x()+" "+l.z()+" "+l.y()+" "+u.x()+" "+u.z()+" "+u.y()+" "+Math.tan(Math.toRadians(30))+" "+(double)width/height+" "+view.renderZoom/25);}catch(IOException err){onClose();}}
         if(!GeneralsClient.blocksInput()&&!Boolean.getBoolean("generalsmc.nativeBench")&&!inPanel(x,y)&&System.currentTimeMillis()-lastWorldMotion>=40){lastWorldMotion=System.currentTimeMillis();worldMouse(0x200,x,y,middleDown?16:rightDown?2:nativeLeft?1:0);}
         if(cursor.available()){GLFW.glfwSetInputMode(minecraft.getWindow().handle(),GLFW.GLFW_CURSOR,GLFW.GLFW_CURSOR_HIDDEN);cursor.drawCursor(g,x,y);}
-    }
-    String ownerTooltip(int id){
-        var view=NativeWorldView.current;if(view==null)return "";var a=view.actor(id);
-        if(a==null||a.contained()||(a.externalKey()!=null&&!a.externalKey().isEmpty()))return "";
-        String name=NativeNetworkClient.armyName(a.owner());
-        if(name.isEmpty())name=a.owner()==view.state.localPlayerIndex()?minecraft.player.getName().getString():a.owner()<2?L.s("Нейтральный"):"NPC "+(a.owner()-1);
-        return L.s("Владелец: %s",name);
-    }
-    private void drawOwnerTooltip(GuiGraphicsExtractor g,int mx,int my){
-        if(inPanel(mx,my)||System.currentTimeMillis()-hoverSince<300)return;
-        String text=ownerTooltip(hoverActor);if(text.isEmpty())return;
-        int w=Math.min(width-12,font.width(text)+10),x=Math.clamp(mx+14,4,width-w-4),y=Math.clamp(my+18,4,height-18);
-        g.fill(x,y,x+w,y+15,0xdd171b20);g.text(font,font.plainSubstrByWidth(text,w-10),x+5,y+4,0xfff0d68a);
     }
     private void drawMobPortrait(GuiGraphicsExtractor g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.portrait()==null||view.state.selected()==null||view.state.selected().size()!=1)return;int selected=view.state.selected().get(0);var actor=view.state.objects().stream().filter(o->o.id()==selected&&o.externalKey()!=null&&!o.externalKey().isEmpty()).findFirst().orElse(null);if(actor==null)return;var entity=java.util.stream.StreamSupport.stream(minecraft.level.entitiesForRendering().spliterator(),false).filter(e->actor.externalKey().equals(e.getUUID().toString())).findFirst().orElse(null);if(!(entity instanceof net.minecraft.world.entity.LivingEntity living))return;var box=view.state.portrait();int left=box.x()*width/input.width,top=box.y()*height/input.height,right=(box.x()+box.width())*width/input.width,bottom=(box.y()+box.height()-36)*height/input.height;float previewHeight=living.getBbHeight();int size=Math.max(1,(int)((bottom-top)/(previewHeight*1.25)));net.minecraft.client.gui.screens.inventory.InventoryScreen.extractEntityInInventoryFollowsMouse(g,left,top,right,bottom,size,(previewHeight-living.getBbHeight())*.5f,(left+right)/2f,(top+bottom)/2f,living);}
     private void drawHealthBars(GuiGraphicsExtractor g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.healthBars()==null)return;
@@ -113,9 +98,10 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         }NativeSession.Actor actor=null;for(var candidate:view.state.objects())if(candidate.id()==picked){actor=candidate;break;}if(actor!=null&&actor.owner()!=view.state.localPlayerIndex()){var p=view.origin.world(actor.x(),actor.y(),actor.z());if(!NativeFog.visible(p.x,p.z))return 0;}return picked;
     }
     private boolean worldMouse(int message,double x,double y,int buttons) {
+        long handlingStarted=System.nanoTime();
         worldPointerX=x;worldPointerY=y;
         var view=NativeWorldView.current;if(view==null||view.state==null)return false;
-        var point=hit(x,y);int id=actorAt(x,y);if(id!=hoverActor){hoverActor=id;hoverSince=System.currentTimeMillis();}
+        var point=hit(x,y);int id=actorAt(x,y);
         if(hoveredMob!=null&&id==0){prioritizeMob(hoveredMob);if(message==0x201){pendingMob=hoveredMob.getUUID();pendingMobX=x;pendingMobY=y;pendingAt=System.currentTimeMillis();return false;}if(message==0x200&&buttons==0)return false;}
         var actor=view.state.objects().stream().filter(o->o.id()==id).findFirst().orElse(null);
         // No ground hit means unloaded terrain/sky. Never issue a synthetic airborne movement order.
@@ -141,7 +127,7 @@ public final class NativeWorldScreen extends NativeFrameScreen {
             }
         }
         var p=view.origin.nativePoint(world);
-        try{lastWorldCommand=input.send("WORLD_MOUSE "+message+" "+p.x+" "+p.y+" "+p.z+" "+id+" "+buttons+" "+(int)(x*input.width/width)+" "+(int)(y*input.height/height));return true;}catch(IOException e){onClose();return false;}
+        try{lastWorldCommand=input.send("WORLD_MOUSE "+message+" "+p.x+" "+p.y+" "+p.z+" "+id+" "+buttons+" "+(int)(x*input.width/width)+" "+(int)(y*input.height/height));if(message==0x201||message==0x203||message==0x204)NativePerformance.order(view,handlingStarted,lastWorldCommand);return true;}catch(IOException e){onClose();return false;}
     }
     private boolean standable(Vec3 p){return minecraft.level.noCollision(new AABB(p.x-.3,p.y+.001,p.z-.3,p.x+.3,p.y+1.8,p.z+.3));}
     private boolean pendingCommand(){var v=NativeWorldView.current;return v!=null&&v.state!=null&&(v.state.pendingBuild()||(v.state.pendingCommand()!=null&&!v.state.pendingCommand().isEmpty()));}

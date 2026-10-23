@@ -53,6 +53,18 @@ Int Pathfinder::hostPathProbe(Object* obj,const Coord3D* goal){
 }
 '''
         path.write_text(value,encoding='utf-8',newline='\n')
+    # Signed host coordinates are valid. Retail's >=0 guards leak unit and goal
+    # reservations behind every unit outside the stock map. Keep the unset value
+    # outside the supported host range, including the real cell (-1,-1).
+    value=path.read_text(encoding='utf-8-sig')
+    for name in ('curCell','goalCell'):
+        old=f'{name}.x>=0 && {name}.y>=0'
+        new=f'(zhmc::pagedWorld()?({name}.x!=-2147483647&&{name}.y!=-2147483647):({old}))'
+        if new not in value:value=value.replace(old,new)
+    old='if (cell.x<0 || cell.y<0) return false;'
+    new='if (zhmc::pagedWorld()?(cell.x==-2147483647||cell.y==-2147483647):(cell.x<0||cell.y<0)) return false;'
+    value=value.replace(old,new).replace('newCell.x = newCell.y = -1;','newCell.x = newCell.y = -2147483647;')
+    path.write_text(value,encoding='utf-8',newline='\n')
     # Keep original allocation bounds; only footprint access becomes sparse.
     value=path.read_text(encoding='utf-8-sig')
     value=re.sub(r'm_map\[([a-z]+)\]\[([a-z]+)\]\.',r'getCell(LAYER_GROUND,\1,\2)->',value)
@@ -184,6 +196,17 @@ Int Pathfinder::hostPathProbe(Object* obj,const Coord3D* goal){
     change(group,signature,signature+'\n    if(zhmc::pagedWorld())return;')
     ai=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate.cpp'
     change(ai,'#include "PreRTS.h"','#include "PreRTS.h"\n'+include)
+    value=ai.read_text(encoding='utf-8-sig')
+    value=re.sub(r'(m_pathfind(?:Goal|Cur)Cell\.[xy](?: = m_pathfind(?:Goal|Cur)Cell\.[xy])? = )-1;',r'\g<1>-2147483647;',value)
+    old='m_pathfindGoalCell.x >= 0 && m_pathfindGoalCell.y >= 0'
+    new='(zhmc::pagedWorld()?(m_pathfindGoalCell.x!=-2147483647&&m_pathfindGoalCell.y!=-2147483647):('+old+'))'
+    if new not in value:value=value.replace(old,new)
+    old='if (goalCell.x>0 && goalCell.y>0) {'
+    new='if (zhmc::pagedWorld()?(goalCell.x!=-2147483647&&goalCell.y!=-2147483647):(goalCell.x>0 && goalCell.y>0)) {'
+    value=value.replace(old,new)
+    # A nearby structure need not have an AI update module.
+    value=value.replace('if (!aiOther->isDoingGroundMovement()) {','if (aiOther && !aiOther->isDoingGroundMovement()) {')
+    ai.write_text(value,encoding='utf-8',newline='\n')
     signature='void AIUpdateInterface::setGoalPositionClipped(const Coord3D* in, CommandSourceType cmdSource)\n{'
     change(ai,signature,signature+'\n    if(zhmc::pagedWorld()){getStateMachine()->setGoalPosition(in);return;}')
     change(ai,'if (cmdSource==CMD_FROM_PLAYER) {\n\t\t// Clip to playable area.','if (cmdSource==CMD_FROM_PLAYER && !zhmc::pagedWorld()) {\n\t\t// Clip to playable area.')

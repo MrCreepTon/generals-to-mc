@@ -55,6 +55,8 @@ if ($forceRebuild) {
         }
         Remove-Item -LiteralPath $outputPath -Force
     }
+    # Invalidation is complete even if a later compile fails; retries may reuse the new objects.
+    [IO.File]::WriteAllText($signatureFile, $headerSignature)
     Write-Host "Cleared $($compilerOutputs.Count) generated compiler outputs for a full rebuild"
 }
 # This target generates EABrowserDispatch/BrowserDispatch.h from the original IDL.

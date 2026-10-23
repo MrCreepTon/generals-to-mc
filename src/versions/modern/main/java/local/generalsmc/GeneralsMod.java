@@ -20,6 +20,8 @@ public final class GeneralsMod implements ModInitializer {
         ServerEntityEvents.ENTITY_LOAD.register(WorldCombat::entityLoaded);
         net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.AFTER_DEATH.register(WorldCombat::entityDied);
         ServerTickEvents.END_WORLD_TICK.register(WorldCombat::worldTick);
+        ServerTickEvents.END_WORLD_TICK.register(WorldEmp::worldTick);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(WorldEmp::stopServer);
         ServerTickEvents.END_WORLD_TICK.register(WorldViewSubscription::tick);
         ServerChunkEvents.CHUNK_LOAD.register((level,chunk)->WorldResourceStore.get(level).chunkLoaded(chunk.getPos().x,chunk.getPos().z));
         ServerTickEvents.END_WORLD_TICK.register(level->{if(level.getGameTime()%4==0&&WorldRules.get(level).values().naturalResources())WorldResourceStore.get(level).generateLoaded(level);});

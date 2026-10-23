@@ -25,7 +25,7 @@ final class NativeReleaseBench {
     static final String world=Boolean.getBoolean("generalsmc.feedbackRegression")?"GeneralsQA":"GeneralsRelease-"+System.currentTimeMillis();
     static void next(int n){stage=n;age=0;GeneralsMod.LOG.info("Release UX case {}",n);}
     static void click(Minecraft mc,String label){NativeSetupBench.click(mc.screen,label);}
-    static void tick(Minecraft mc){if(done)return;ticks++;age++;try{
+    static void tick(Minecraft mc){if(Boolean.getBoolean("generalsmc.resumeRegression")){NativeResumeBench.tick(mc);return;}if(done)return;ticks++;age++;try{
         if(ticks>20*480)throw new IllegalStateException("Release UX timeout stage "+stage);
         if(stage>=341&&stage<=342&&mc.screen instanceof GeneralsFailureScreen)throw new IllegalStateException("Native startup/gameplay failed; inspect the retained native process log");
         if((stage==290||stage==30||stage==31)&&age%5==0)mc.getSingleplayerServer().execute(()->{var g=(net.minecraft.world.entity.animal.IronGolem)mc.getSingleplayerServer().getLevel(GeneralsMod.ARENA).getEntity(golem);if(g!=null&&g.getTarget() instanceof NativeActorEntity a&&a.nativeId==ranger)neutralResponded=true;});

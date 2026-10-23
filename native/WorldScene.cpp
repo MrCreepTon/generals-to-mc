@@ -296,6 +296,7 @@ void rememberModel(const void* module,RenderObjClass* model){if(model){auto foun
 bool worldTransportActive() { return radius > 0; }
 bool sceneEnabled() { return radius > 0; }
 bool worldInterfaceActive() { return radius > 0 && worldViewMode; }
+bool hostMinecraftEffects(const Coord3D* p){return p&&!worldInterfaceActive()&&std::hypot(p->x-centerX,p->y-centerY)<=radius&&hostTerrainKnown(p);}
 bool suppressNativeWorld() { return radius > 0 && timeGetTime()-worldStarted>2000; }
 void setWorldViewMode(bool active) { worldViewMode=active; }
 void captureScene() {
@@ -317,7 +318,10 @@ void captureScene() {
         if (std::hypot(p->x - centerX, p->y - centerY) > radius) continue;
         const bool resource=object&&(object->isKindOf(KINDOF_SUPPLY_SOURCE)||object->getTemplate()->getName()=="TechOilDerrick");
         if(resource)draw->setFullyObscuredByShroud(false);
-        if((draw->getFullyObscuredByShroud()&&!resource)||(TheInGameUI->hostIsPlacementDrawable(draw)&&!worldInterfaceActive()))continue;
+        if((draw->getFullyObscuredByShroud()&&!resource&&worldInterfaceActive())||(TheInGameUI->hostIsPlacementDrawable(draw)&&!worldInterfaceActive()))continue;
+        // Shroud controls the RTS commander, never first-person Minecraft rendering.
+        struct HostVisibilityScope {Drawable* draw;bool restore;~HostVisibilityScope(){if(restore)draw->setFullyObscuredByShroud(true);}} visibility{draw,!worldInterfaceActive()&&draw->getFullyObscuredByShroud()};
+        if(visibility.restore)draw->setFullyObscuredByShroud(false);
         draw->draw(); // Preserve original model-state transitions and draw-module animation control.
         unsigned int id=object&&object->isKindOf(KINDOF_SELECTABLE)?object->getID():0x80000000u+draw->getID();
         Vector3 tint(0,0,0);if(auto c=draw->getTintColor())tint+=*c;if(auto c=draw->getSelectionColor())tint+=*c;

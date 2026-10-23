@@ -9,7 +9,20 @@ import java.util.*;
 public final class ReleaseChecks {
     private static int checks;
     private static void require(boolean ok,String detail){if(!ok)throw new AssertionError(detail);checks++;}
+    private static void oldPreparationCheck(WorldRules.Values value){var rules=new WorldRules();rules.update(value);require(WorldRules.load(rules.save(new CompoundTag(),null)).values().equals(value),"Starting area preparation survives save/load");}
     public static void main(String[] args)throws Exception{
+        require(Files.isDirectory(Path.of(NativeProfiles.browseStart(""))),"Empty folder picker starts in an existing directory");
+        require(Files.isDirectory(Path.of(NativeProfiles.browseStart("\0"))),"Invalid picker input falls back without a crash");
+        var layout=Files.createTempDirectory("generals-folders-");try{
+            var base=Files.createDirectory(layout.resolve("Base"));var zh=Files.createDirectory(layout.resolve("Expansion"));
+            Files.createFile(base.resolve("INI.big"));Files.createFile(base.resolve("W3D.big"));Files.createFile(zh.resolve("INIZH.big"));Files.createFile(zh.resolve("W3DZH.big"));
+            var found=NativeProfiles.locate(layout.toString());require(found.zeroHour().equals(zh.toString())&&found.generals().equals(base.toString()),"A collection folder detects both games without relying on folder names");
+            require(NativeProfiles.suggestBase(zh.toString()).equals(base.toString()),"Zero Hour resolves an adjacent base game");
+        }finally{try(var files=Files.walk(layout)){for(var file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}}
+        var emp=WorldRules.Values.defaults().toggle("empMobs").toggle("empRedstone");var empRules=new WorldRules();empRules.update(emp);
+        require(WorldRules.load(empRules.save(new CompoundTag(),null)).values().equals(emp),"EMP settings round trip in world data");
+        require(!emp.toggle("fireSpread").emp().mobs()&&!emp.toggle("blastPower").emp().redstone(),"Unrelated rules preserve independent EMP settings");
+
         byte[] radar=new byte[65572];Arrays.fill(radar,(byte)64);var compressed=local.generalsmc.net.NativePayloadCompression.encode(radar);
         for(String marker:List.of("army_start_marker","supply_marker","oil_derrick_marker")){
             try(var stream=ReleaseChecks.class.getResourceAsStream("/assets/generalsmc/models/block/"+marker+".json")){
@@ -38,6 +51,10 @@ public final class ReleaseChecks {
         require(delivered==300,"A300ms acknowledgement path retains30Hz without increasing the authority execution queue");
         var markerData=new WorldSiteStore();var markerPos=new net.minecraft.core.BlockPos(1024,64,-2048);markerData.putStart(markerPos,0,"",0,-1);markerData.annotate(markerPos,"Village","Defend the villagers");var loadSites=WorldSiteStore.class.getDeclaredMethod("load",CompoundTag.class);loadSites.setAccessible(true);var restored=(WorldSiteStore)loadSites.invoke(null,markerData.save(new CompoundTag(),null));require(restored.annotation(markerPos).equals(markerData.annotation(markerPos)),"Marker names and notes survive a full NBT load");restored.remove(markerPos);require(!restored.contains(markerPos)&&restored.annotation(markerPos).name().isEmpty(),"Deleting a marker removes its annotation");
         var d=WorldRules.Values.defaults();require(d.blockDestruction()&&d.fireSpread()&&d.naturalResources(),"Compatible defaults");
+        require(!d.affectsTerrain(false)&&d.affectsTerrain(true),"Ordinary combat preserves blocks; force attack can destroy cover");
+        var any=d.toggle("blockDestruction");var off=any.toggle("blockDestruction");
+        require(any.affectsTerrain(false)&&any.affectsTerrain(true)&&!off.affectsTerrain(false)&&!off.affectsTerrain(true)&&off.toggle("blockDestruction").equals(d),"Three terrain modes cycle without altering unrelated rules");
+        var prepared=d.toggle("prepareStarts");oldPreparationCheck(prepared);
         var old=WorldRules.load(new CompoundTag());require(old.values().equals(d),"Old worlds without settings retain defaults");
         require(d.mobGeneralExperience()&&d.eliminationVictory(),"Old worlds enable general experience and normal skirmish victory");
         var optional=d.toggle("mobGeneralExperience").toggle("eliminationVictory");old.update(optional);

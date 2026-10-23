@@ -31,20 +31,25 @@ final class StartMapScreen extends CompatScreen {
         shownPoints=NativeNetworkClient.mapPoints;if(!initialized){fit();initialized=true;}
         terrain=null;side=Math.max(40,Math.min(width-30,height-148));left=(width-side)/2;top=46;
         int x=width/2-155,y=height-83;
-        addRenderableWidget(Button.builder(L.component(L.s("Моя позиция")),b->{touched=true;center(minecraft.player.getX(),minecraft.player.getZ());}).bounds(x,y,130,20).build());
-        addRenderableWidget(Button.builder(L.component(L.s("Все точки")),b->{touched=true;fit();}).bounds(x+134,y,116,20).build());
-        addRenderableWidget(Button.builder(L.component("−"),b->zoom(1.5,width/2.,top+side/2.)).bounds(x+254,y,26,20).build());
-        addRenderableWidget(Button.builder(L.component("+"),b->zoom(1/1.5,width/2.,top+side/2.)).bounds(x+284,y,26,20).build());
-        if(!resources)addRenderableWidget(Button.builder(L.component(L.s("Автовыбор стартовой позиции")),b->{choose.accept(-1);onClose();}).bounds(x,height-59,310,20).build());
-        addRenderableWidget(Button.builder(L.component(L.s("Назад")),b->onClose()).bounds(x,height-33,310,20).build());
+        addRenderableWidget(MenuButton.styled(L.component(L.s("Моя позиция")),b->{touched=true;center(minecraft.player.getX(),minecraft.player.getZ());}).bounds(x,y,130,20).build());
+        addRenderableWidget(MenuButton.styled(L.component(L.s("Все точки")),b->{touched=true;fit();}).bounds(x+134,y,116,20).build());
+        addRenderableWidget(MenuButton.styled(L.component("−"),b->zoom(1.5,width/2.,top+side/2.)).bounds(x+254,y,26,20).build());
+        addRenderableWidget(MenuButton.styled(L.component("+"),b->zoom(1/1.5,width/2.,top+side/2.)).bounds(x+284,y,26,20).build());
+        if(!resources)addRenderableWidget(MenuButton.styled(L.component(L.s("Автовыбор стартовой позиции")),b->{choose.accept(-1);onClose();}).bounds(x,height-59,310,20).build());
+        addRenderableWidget(MenuButton.styled(L.component(L.s("Назад")),b->onClose()).bounds(x,height-33,310,20).build());
     }
     int px(double x){return left+(int)((x-cx+span)/(2*span)*side);}int pz(double z){return top+(int)((z-cz+span)/(2*span)*side);}
     boolean inside(double x,double y){return x>=left&&x<left+side&&y>=top&&y<top+side;}
     void zoom(double factor,double x,double y){double before=span;span=Math.clamp(span*factor,12,30000000);cx+=(x-left-side/2.)*2*(before-span)/side;cz+=(y-top-side/2.)*2*(before-span)/side;touched=true;terrain=null;}
     @Override public void render(GuiGraphics g,int mx,int my,float d){
-        super.render(g,mx,my,d);g.drawCenteredString(font,title,width/2,12,0xfff0d68a);
+        MenuButton.panel(g,width,height);super.render(g,mx,my,d);g.drawCenteredString(font,title,width/2,12,0xfff0d68a);
         g.drawCenteredString(font,L.s("Тяните карту мышью • колесо — масштаб"),width/2,28,0xffcccccc);
-        g.fill(left-2,top-2,left+side+2,top+side+2,0xffb79857);g.fill(left,top,left+side,top+side,0xff20272d);
+        drawMap(g,mx,my,true);
+        g.drawCenteredString(font,L.s("Позиция: ")+minecraft.player.getBlockX()+", "+minecraft.player.getBlockY()+", "+minecraft.player.getBlockZ(),width/2,height-97,0xffdddddd);
+        if(resources)g.drawCenteredString(font,L.s("Только маркеры: зелёный — склады • золотой — нефть"),width/2,height-56,0xffdddddd);
+    }
+    void drawMap(GuiGraphics g,int mx,int my,boolean tooltips){
+        g.fill(left-2,top-2,left+side+2,top+side+2,MenuButton.MODERN?0xff36758a:0xffb79857);g.fill(left,top,left+side,top+side,0xff20272d);
         if(terrain==null||System.currentTimeMillis()-terrainAt>2000){terrainAt=System.currentTimeMillis();terrain=new int[32*32];for(int x=0;x<32;x++)for(int z=0;z<32;z++){
             int wx=(int)Math.floor(cx-span+2*span*(x+.5)/32),wz=(int)Math.floor(cz-span+2*span*(z+.5)/32);
             var chunk=minecraft.level.getChunkSource().getChunk(wx>>4,wz>>4,net.minecraft.world.level.chunk.status.ChunkStatus.FULL,false);
@@ -59,9 +64,7 @@ final class StartMapScreen extends CompatScreen {
         g.fill(ux-4,uy-4,ux+5,uy+5,0xff111111);g.fill(ux-2,uy-2,ux+3,uy+3,0xff55ddff);
         double yaw=Math.toRadians(minecraft.player.getYRot());for(int i=3;i<8;i++){int x=ux-(int)(Math.sin(yaw)*i),y=uy+(int)(Math.cos(yaw)*i);g.fill(x-1,y-1,x+2,y+2,0xff55ddff);}
         g.drawCenteredString(font,L.s("Вы"),ux,uy-13,0xffaaffff);g.drawString(font,"N ↑",left+4,top+4,0xffffffff);g.disableScissor();
-        g.drawCenteredString(font,L.s("Позиция: ")+minecraft.player.getBlockX()+", "+minecraft.player.getBlockY()+", "+minecraft.player.getBlockZ(),width/2,height-97,0xffdddddd);
-        if(resources)g.drawCenteredString(font,L.s("Только маркеры: зелёный — склады • золотой — нефть"),width/2,height-56,0xffdddddd);
-        if(hover!=null&&!dragging&&inside(mx,my))g.setTooltipForNextFrame(font,L.component(hover),mx,my);
+        if(tooltips&&hover!=null&&!dragging&&inside(mx,my))g.setTooltipForNextFrame(font,L.component(hover),mx,my);
     }
     private static void dot(GuiGraphics g,int x,int y,int color){g.fill(x-4,y-4,x+5,y+5,0xff111111);g.fill(x-3,y-3,x+4,y+4,color);}
     @Override public boolean mouseClicked(double x,double y,int b){if(b==0&&inside(x,y)){dragging=true;downX=x;downY=y;dragDistance=0;return true;}return super.mouseClicked(x,y,b);}

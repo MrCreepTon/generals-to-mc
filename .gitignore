@@ -1,4 +1,12 @@
 *.md
+!/README.md
+!/README.ru.md
+!/CHANGELOG.md
+!/CHANGELOG.ru.md
+!/LICENSE.md
+!/LICENSE.ru.md
+!/THIRD_PARTY_NOTICES.md
+!/THIRD_PARTY_NOTICES.ru.md
 .gradle/
 build/
 run/
@@ -64,3 +72,7 @@ installer/
 !/tools/build.py
 !/tools/draft_release.py
 !/tools/watch_latency.py
+
+!/tools/native_navigation_bench.py
+
+!/tools/native_emp_bench.py

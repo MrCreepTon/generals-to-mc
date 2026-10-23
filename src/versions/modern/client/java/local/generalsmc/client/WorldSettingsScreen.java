@@ -1,36 +1,48 @@
 package local.generalsmc.client;
-
 import local.generalsmc.nativebridge.NativeNetworkServer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
 import java.util.*;
-
-/** All gameplay changes go through the world's server, including in singleplayer. */
+/** Small groups, readable values and server-owned changes. */
 public final class WorldSettingsScreen extends CompatScreen {
-    private final Screen parent;private NativeNetworkServer.RulesState shown;private int scroll,contentHeight;
-    private final List<AbstractWidget> rows=new ArrayList<>();
-    WorldSettingsScreen(Screen parent){super(L.component(L.s("Мир и взаимодействия")));this.parent=parent;NativeNetworkClient.rules=null;NativeNetworkClient.request("rules_get");}
-    @Override protected void init(){rows.clear();shown=NativeNetworkClient.rules;int w=Math.min(330,width-24),x=(width-w)/2,y=58-scroll;
-        if(shown!=null){var v=shown.values();
-            row("blockDestruction",L.s("Разрушать блоки оружием"),v.blockDestruction(),L.s("Снаряды и взрывы Generals разрушают блоки. Урон юнитам и мобам сохраняется при любом значении."),x,y,w,false);y+=25;
-            row("fireSpread",L.s("Поджигать блоки"),v.fireSpread(),L.s("Огнемёты, в том числе танк «Дракон», оставляют огонь на блоках. Дальнейшее горение зависит от правил Minecraft."),x,y,w,false);y+=25;
-            row("hostileMobs",L.s("Монстры атакуют армию"),v.hostileMobs(),L.s("Враждебные мобы могут выбирать видимые юниты Generals своей целью."),x,y,w,false);y+=25;
-            row("neutralRetaliation",L.s("Нейтральные мобы отвечают"),v.neutralRetaliation(),L.s("Големы и нейтральные мобы защищаются, когда армия атакует их. Мирные мобы не начинают бой сами."),x,y,w,false);y+=25;
-            row("environmentDamage",L.s("Огонь, лава и утопление"),v.environmentDamage(),L.s("Мир Minecraft может повреждать юниты и здания Generals огнём, лавой и водой."),x,y,w,false);y+=25;
-            row("mobGeneralExperience",L.s("Опыт генерала за мобов"),v.mobGeneralExperience(),L.s("Убийства мобов армией повышают генеральский ранг. Опыт начисляется один раз за настоящую смерть; убийства игроком не засчитываются армии."),x,y,w,false);y+=25;
-            row("eliminationVictory",L.s("Победа по основным зданиям"),v.eliminationVictory(),L.s("В схватке армия выбывает после потери всех основных зданий. Союз побеждает, когда противников не остаётся. Свободная RTS в одиночном мире продолжается без этого условия."),x,y,w,false);y+=25;
-            row("naturalResources",L.s("Ресурсы: ")+(v.naturalResources()?L.s("мир + маркеры"):L.s("только маркеры")),true,L.s("Мир + маркеры: склады появляются в подходящих местах по seed. Только маркеры: расставьте блоки ресурсов вручную. Меняется до начала схватки."),x,y,w,shown.resourcesLocked());y+=25;
-        }
-        if(shown!=null){setting("blastRadius",L.s("Радиус разрушения блоков: ×")+shown.values().blastRadius(),L.s("Меняет только зону разрушения блоков Minecraft. Дальность и урон оружия Generals сохраняются."),x,y,w);y+=25;setting("blastPower",L.s("Пробитие блоков: ×")+shown.values().blastPower(),L.s("Усиливает разрушение дерева, земли и камня. Не изменяет урон юнитам и мобам."),x,y,w);y+=25;}
-        contentHeight=y+scroll-58;for(var r:rows)r.visible=r.getY()>=56&&r.getY()+20<=height-70;
-        addRenderableWidget(Button.builder(L.component(L.s("Готово")),b->onClose()).bounds(x,height-30,w,20).build());
-    }
-    private void setting(String key,String text,String detail,int x,int y,int w){var b=addRenderableWidget(Button.builder(L.component(text),v->NativeNetworkClient.request("rules_change",j->j.addProperty("key",key))).bounds(x,y,w,20).build());b.active=shown.editable();b.setTooltip(Tooltip.create(L.component(detail)));rows.add(b);}
-    private void row(String key,String label,boolean value,String detail,int x,int y,int w,boolean locked){String text=key.equals("naturalResources")?label:label+": "+(value?L.s("да"):L.s("нет"));var b=addRenderableWidget(Button.builder(L.component(text),button->NativeNetworkClient.request("rules_change",j->j.addProperty("key",key))).bounds(x,y,w,20).build());b.active=shown.editable()&&!locked;b.setTooltip(Tooltip.create(L.component(detail+(locked?L.s(" Завершите текущую схватку для изменения."):""))));rows.add(b);}
-    @Override public void tick(){if(shown!=NativeNetworkClient.rules)rebuildWidgets();}
-    @Override public void render(GuiGraphics g,int mx,int my,float d){super.render(g,mx,my,d);g.drawCenteredString(font,title,width/2,15,0xfff0d68a);g.drawCenteredString(font,shown==null?L.s("Правила мира"):shown.editable()?L.s("Сохраняется сразу • действует для всех игроков"):L.s("Правила задаёт владелец мира"),width/2,34,0xffbbbbbb);if(shown==null)g.drawWordWrap(font,L.component(NativeNetworkClient.message.isBlank()?L.s("Загрузка…"):NativeNetworkClient.message),(width-Math.min(330,width-24))/2,62,Math.min(330,width-24),0xffdddddd);if(!NativeNetworkClient.error.isBlank()){int x=width/2-Math.min(330,width-24)/2,y=height-60;g.fill(x-2,y-2,x+Math.min(330,width-24)+2,y+19,0xee181b20);g.enableScissor(x,y,x+Math.min(330,width-24),y+20);g.drawWordWrap(font,L.component(NativeNetworkClient.error),x,y,Math.min(330,width-24),0xffff8888);g.disableScissor();if(my>=y&&my<y+20)g.setTooltipForNextFrame(font,font.split(L.component(NativeNetworkClient.error),300),mx,my);}if(contentHeight>height-126){int x=width/2+Math.min(330,width-24)/2+3;g.fill(x,56,x+2,height-46,0xff444444);int top=56+(int)((height-136)*(double)scroll/Math.max(1,contentHeight-(height-126)));g.fill(x,top,x+2,top+10,0xfff0d68a);}}
-    @Override public boolean mouseScrolled(double x,double y,double h,double v){scroll=Math.clamp(scroll-(int)(v*25),0,Math.max(0,contentHeight-(height-126)));rebuildWidgets();return true;}
-    @Override public void onClose(){minecraft.setScreen(parent);}@Override public boolean isPauseScreen(){return false;}
+ private final Screen parent;private NativeNetworkServer.RulesState shown;private int category,scroll,contentHeight;
+ private final List<AbstractWidget> rows=new ArrayList<>();private final List<Integer> descriptionsY=new ArrayList<>();private final List<String> descriptions=new ArrayList<>();
+ WorldSettingsScreen(Screen parent){super(L.component(L.s("Правила схватки")));this.parent=parent;NativeNetworkClient.rules=null;NativeNetworkClient.request("rules_get");}
+ @Override protected void init(){rows.clear();descriptions.clear();descriptionsY.clear();shown=NativeNetworkClient.rules;int w=Math.min(460,width-28),x=(width-w)/2;
+  String[] tabs={L.s("Бой"),L.s("Мобы"),L.s("Мир"),L.s("ЭМИ")};for(int i=0;i<tabs.length;i++){final int n=i;var b=addRenderableWidget(MenuButton.styled(L.component(tabs[i]),v->{category=n;scroll=0;rebuildWidgets();}).bounds(x+i*(w+6)/tabs.length,48,(w-6*(tabs.length-1))/tabs.length,20).build());b.active=category!=i;}
+  int y=82-scroll;
+  if(shown!=null){var v=shown.values();if(category==0){
+   row("blockDestruction",L.s("Разрушение блоков"),!v.blockDestruction()?L.s("Выключено"):v.forceAttackDestruction()?L.s("Только Ctrl-атака"):L.s("Любая атака"),L.s("Определяет, какие атаки могут разрушать блоки."),x,y,w,false);y+=48;
+   row("fireSpread",L.s("Поджигать мир"),yes(v.fireSpread()),L.s("Огнемёты оставляют огонь на блоках."),x,y,w,false);y+=48;
+   row("eliminationVictory",L.s("Победа по зданиям"),yes(v.eliminationVictory()),L.s("Армия выбывает после потери основных зданий."),x,y,w,false);y+=48;
+   if(v.blockDestruction()){row("blastRadius",L.s("Радиус разрушений"),"×"+v.blastRadius(),L.s("Влияет на блоки, не на урон юнитам."),x,y,w,false);y+=48;row("blastPower",L.s("Пробитие блоков"),"×"+v.blastPower(),"",x,y,w,false);y+=30;}
+  }else if(category==1){
+   row("hostileMobs",L.s("Монстры атакуют армию"),yes(v.hostileMobs()),L.s("Монстры выбирают видимые юниты своей целью."),x,y,w,false);y+=48;
+   row("neutralRetaliation",L.s("Нейтральные отвечают"),yes(v.neutralRetaliation()),L.s("Големы и нейтральные мобы защищаются при нападении."),x,y,w,false);y+=48;
+   row("environmentDamage",L.s("Урон от среды"),yes(v.environmentDamage()),L.s("Огонь, лава и вода повреждают армию."),x,y,w,false);y+=48;
+   row("mobGeneralExperience",L.s("Опыт за мобов"),yes(v.mobGeneralExperience()),L.s("Убийства мобов повышают ранг генерала."),x,y,w,false);y+=48;
+  }else if(category==2){
+   row("prepareStarts",L.s("Стартовые площадки"),v.prepareStarts()?L.s("Расчистить"):L.s("Только проверять"),L.s("Расчистка выровняет землю и уберёт препятствия вокруг стартов перед матчем."),x,y,w,shown.resourcesLocked());y+=60;
+   row("naturalResources",L.s("Ресурсы"),v.naturalResources()?L.s("Мир + маркеры"):L.s("Только маркеры"),L.s("Выберите автоматическое размещение или свои маркеры."),x,y,w,shown.resourcesLocked());y+=60;
+  }else{
+   row("empVehicles",L.s("Техника Generals"),yes(v.emp().vehicles()),L.s("Штатные ЭМИ отключают технику и здания."),x,y,w,false);y+=48;
+   row("empMobs",L.s("Оглушать мобов"),yes(v.emp().mobs()),L.s("Мобы перестают двигаться и атаковать до окончания ЭМИ."),x,y,w,false);y+=48;
+   row("empRedstone",L.s("Подавлять редстоун"),yes(v.emp().redstone()),L.s("Сигнал временно пропадает. Механизмы остаются на месте."),x,y,w,false);y+=48;
+  }}
+  contentHeight=y+scroll-82;for(var r:rows)r.visible=r.getY()>=80&&r.getY()+20<=height-58;
+  addRenderableWidget(MenuButton.styled(L.component(L.s("Готово")),b->onClose()).bounds(x,height-28,w,20).build());
+ }
+ private static String yes(boolean v){return v?L.s("Включено"):L.s("Выключено");}
+ private void row(String key,String label,String value,String detail,int x,int y,int w,boolean locked){
+  int valueWidth=Math.min(145,w/2);var b=addRenderableWidget(MenuButton.styled(L.component(value),v->NativeNetworkClient.request("rules_change",j->j.addProperty("key",key))).bounds(x+w-valueWidth,y,valueWidth,20).build());b.active=shown.editable()&&!locked;b.setTooltip(Tooltip.create(L.component(locked?L.s("Меняется перед началом схватки"):detail)));rows.add(b);
+  descriptions.add(label+"\n"+detail);descriptionsY.add(y);
+ }
+ @Override public void tick(){if(shown!=NativeNetworkClient.rules)rebuildWidgets();}
+ @Override public void render(GuiGraphics g,int mx,int my,float partial){MenuButton.panel(g,width,height);super.render(g,mx,my,partial);int w=Math.min(460,width-28),x=(width-w)/2;g.drawCenteredString(font,title,width/2,14,0xfff0d68a);g.drawCenteredString(font,shown==null?L.s("Загрузка…"):shown.editable()?L.s("Сохраняется сразу"):L.s("Настраивает только хозяин схватки"),width/2,30,0xffbbbbbb);
+  g.enableScissor(x,78,x+w,height-55);for(int i=0;i<descriptions.size();i++){int y=descriptionsY.get(i);String[] text=descriptions.get(i).split("\n",2);g.drawString(font,font.plainSubstrByWidth(text[0],w-Math.min(145,w/2)-8),x,y+6,0xffeeeeee);if(text.length>1)g.drawWordWrap(font,L.component(text[1]),x,y+24,w,0xffaaaaaa);}g.disableScissor();
+  if(!NativeNetworkClient.error.isBlank())g.drawString(font,font.plainSubstrByWidth(NativeNetworkClient.error,w),x,height-48,0xffff8888);
+ }
+ @Override public boolean mouseScrolled(double x,double y,double h,double v){scroll=Math.clamp(scroll-(int)(v*30),0,Math.max(0,contentHeight-(height-140)));rebuildWidgets();return true;}
+ @Override public void onClose(){minecraft.setScreen(parent);}@Override public boolean isPauseScreen(){return false;}
 }

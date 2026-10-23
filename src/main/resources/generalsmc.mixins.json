@@ -9,7 +9,9 @@
     "CameraMobDespawnMixin",
     "StructureMovementMixin",
     "StructureNavigationMixin",
-    "StructureExplosionMixin"
+    "StructureExplosionMixin",
+    "EmpSignalMixin",
+    "EmpMobMixin"
   ],
   "injectors": {
     "defaultRequire": 1

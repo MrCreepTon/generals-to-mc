@@ -92,6 +92,7 @@ public final class NativeRtsController {
                 if(state.colors()!=null&&state.colors().stream().noneMatch(c->c.id()==teamColor))teamColor=state.colors().isEmpty()?0:state.colors().getFirst().id();
                 // Preserve the stock diagnostic opponent; mods may replace every stock faction.
                 String opponent=playable.contains("FactionChina")?"FactionChina":playable.getFirst();
+                session.send("MATCH_NAME 0 "+GeneralsMod.JSON.toJson(mc.player.getName().getString()));
                 session.start(map,faction,opponent,12345,10000,teamColor);started=true;
             }
             if(state.inGame() && terrain==null && WorldScale.blocksForCells(state.terrainExtentX())>0 && WorldScale.blocksForCells(state.terrainExtentY())>0) {

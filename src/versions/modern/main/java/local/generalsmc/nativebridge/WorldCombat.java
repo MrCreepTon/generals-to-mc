@@ -16,7 +16,7 @@ public final class WorldCombat implements AutoCloseable {
     private static volatile WorldCombat active;
     public static boolean busy(){return active!=null;}
     private final ServerLevel level;
-    private final NativeSession session;
+    private final NativeSession session;private final WorldEmp emp;private Boolean empVehicles;
     private final int originX,originY,originZ;
     private final ArmyChunkSubscription chunks;
     private final Map<Integer,NativeActorEntity> actors=new HashMap<>();
@@ -41,7 +41,7 @@ public final class WorldCombat implements AutoCloseable {
     public long appliedCombatSequence(){return eventSequence;}
     private StringBuilder batch;
     public long outgoingMobDamage,incomingNativeDamage,acceptedNativeDamage,worldExplosions,worldIgnitions;
-    public WorldCombat(NativeSession session,ServerLevel level,int x,int y,int z){this.session=session;this.level=level;originX=x;originY=y;originZ=z;chunks=new ArmyChunkSubscription(level,x,z);level.getServer().execute(()->{if(!closed)active=this;});}
+    public WorldCombat(NativeSession session,ServerLevel level,int x,int y,int z){this.session=session;this.level=level;emp=new WorldEmp(level);originX=x;originY=y;originZ=z;chunks=new ArmyChunkSubscription(level,x,z);level.getServer().execute(()->{if(!closed)active=this;});}
     public void snapshot(NativeSession.State state){this.state=state;}
     public boolean alive(){return !closed;}
     public boolean acknowledged(long ticket,NativeSession.State value){return session.acknowledged(ticket,value);}
@@ -61,13 +61,13 @@ public final class WorldCombat implements AutoCloseable {
             var proxy=actors.get(a.id());if(proxy==null||proxy.isRemoved()){proxy=new NativeActorEntity(NativeActorEntity.TYPE,level);actors.put(a.id(),proxy);proxy.synchronize(this,a,current,p.x,p.y,p.z);level.addFreshEntity(proxy);}else proxy.synchronize(this,a,current,p.x,p.y,p.z);
         }
         actors.entrySet().removeIf(e->{if(retained.contains(e.getKey()))return false;e.getValue().discard();return true;});
-        var rules=WorldRules.get(level).values();
+        var rules=WorldRules.get(level).values();if(empVehicles==null||empVehicles!=rules.emp().vehicles()){send("HOST_EMP_RULES "+(rules.emp().vehicles()?1:0));empVehicles=rules.emp().vehicles();}
         for(var entity:level.getAllEntities())if(entity instanceof Mob mob&&mob.getTarget() instanceof NativeActorEntity target&&(target.isInvisible()||((mob instanceof NeutralMob||mob instanceof net.minecraft.world.entity.animal.golem.IronGolem)?!rules.neutralRetaliation():!rules.hostileMobs())))mob.setTarget(null);
         for(var entity:level.getAllEntities())if(entity instanceof Mob mob){boolean neutral=mob instanceof NeutralMob||mob instanceof net.minecraft.world.entity.animal.golem.IronGolem;boolean disabled=neutral?!rules.neutralRetaliation():mob instanceof Monster&&!rules.hostileMobs();if(disabled){if(mob.getLastHurtByMob() instanceof NativeActorEntity)mob.setLastHurtByMob(null);if(mob instanceof NeutralMob angry&&angry.getPersistentAngerTarget()!=null&&angry.getPersistentAngerTarget().getEntity(level,net.minecraft.world.entity.LivingEntity.class) instanceof NativeActorEntity){angry.setPersistentAngerTarget(null);angry.setTimeToRemainAngry(0);}}}
         long applied=eventSequence;
         var events=current.combatEvents()==null?java.util.List.<NativeSession.CombatEvent>of():current.combatEvents().stream().filter(e->e.sequence()>eventSequence).sorted(java.util.Comparator.comparingInt((NativeSession.CombatEvent e)->e.target()!=null&&!e.target().isEmpty()?0:1).thenComparingLong(NativeSession.CombatEvent::sequence)).toList();
         for(var e:events){
-            applied=Math.max(applied,e.sequence());var attacker=actors.get(e.source());
+            applied=Math.max(applied,e.sequence());if(e.disabledFrames()>0){emp.pulse(world(e.x(),e.y(),e.z()),e.radius()/WorldScale.UNITS_PER_BLOCK,(int)Math.ceil(e.disabledFrames()*20./30));continue;}var attacker=actors.get(e.source());
             if(e.target()!=null&&!e.target().isEmpty()){
                 var target=level.getEntity(UUID.fromString(e.target()));if(target instanceof LivingEntity living&&living.isAlive()){
                     boolean neutralTarget=living instanceof NeutralMob||living instanceof net.minecraft.world.entity.animal.golem.IronGolem;
@@ -84,7 +84,7 @@ public final class WorldCombat implements AutoCloseable {
                 // Original AoE already handled represented entities. Only host blocks receive this second pass.
                 var impact=world(e.x(),e.y(),e.z());double originalRadius=e.radius()/WorldScale.UNITS_PER_BLOCK;
                 if(e.damageType()==6||e.damageType()==29){if(rules.fireSpread())ignite(impact,originalRadius);continue;}
-                if(!rules.blockDestruction())continue;
+                if(!rules.affectsTerrain(e.forcedAttack()))continue;
                 double radius=Math.min(64,Math.max(.75,originalRadius)*rules.blastRadius());
                 float pressure=(float)Math.min(64,Math.min(radius+2,Math.max(radius/2,e.amount()/current.healthUnitsPerPoint()/2))*rules.blastPower());
                 double penetration=Math.max(radius,pressure);
@@ -145,5 +145,5 @@ public final class WorldCombat implements AutoCloseable {
     }
     public int nativeMobId(UUID uuid){var s=state;if(s==null)return 0;String key=uuid.toString();for(var a:s.objects())if(key.equals(a.externalKey()))return a.id();return 0;}
     public NativeActorEntity actor(int id){return actors.get(id);}
-    @Override public void close(){if(closed)return;closed=true;level.getServer().execute(()->{chunks.close();actors.values().forEach(Entity::discard);actors.clear();if(active==this)active=null;});}
+    @Override public void close(){if(closed)return;closed=true;level.getServer().execute(()->{emp.close();chunks.close();actors.values().forEach(Entity::discard);actors.clear();if(active==this)active=null;});}
 }

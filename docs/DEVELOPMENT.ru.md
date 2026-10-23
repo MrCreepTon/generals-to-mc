@@ -55,7 +55,7 @@ make help
 
 ## Проверки
 
-`stageRelease` запускает 29 проверок общей логики и аудит JAR: SHA256/импорты движка, отсутствие игровых данных и тестовых драйверов. Проверки настоящего клиента выполняются отдельно:
+`stageRelease` запускает 38 проверок общей логики и аудит JAR: SHA256/импорты движка, отсутствие игровых данных и тестовых драйверов. Проверки настоящего клиента выполняются отдельно:
 
 ```powershell
 .\gradlew.bat productionSmoke '-Pminecraft_target=1.21.11' -PnativeFeedbackRegression -PnativeTestLanguage=en_us
@@ -71,6 +71,8 @@ python tools/verify_native_patch.py
 
 Кадры для README: `productionSmoke -Pminecraft_target=1.21.4 -PnativeReleaseUx -PnativeReadmeCapture -PnativeTestLanguage=en_us`. Для русского языка укажите `ru_ru`, для съёмки только меню — `-PnativeReadmeCapture=ui`. Кадры сохраняются в `build/production-smoke/screenshots/readme-*.png`; драйвер съёмки не входит в JAR игрока.
 
+Проверка F8/Peaceful на 1.21.4: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky`. Проверяет потерянное отпускание Alt, смену сложности в меню паузы, выбор и движение мышью, пиксели штатной подсказки. Без `-PnativeResumeSticky` выполняет четыре обычных цикла F8.
+
 Проверка двух клиентов 1.21.4: `runClient -Pminecraft_target=1.21.4 -PnativeNetworkBench -PnativeNetworkDualOnly -PnativeFakeLatency`. Она проверяет команды, темп симуляции и восстановление при 0/100/300/0 мс RTT с колебаниями.
 
 Проверка стабильности 26.3: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=480`. Добавьте `-PnativeStabilitySolo` для одного клиента с общей симуляцией или `-PnativeStabilityJfr` для профилирования Java. Перезагрузка ресурсов: обычный `productionSmoke -PnativeReloadCycles=12`.
@@ -80,6 +82,10 @@ python tools/verify_native_patch.py
 Remap исходников зависимостей отключён для ускорения сборки. Для просмотра кода в IDE включите `-Dfabric.loom.ci=false`.
 
 
+Проверка стартовых площадок и разрушений: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky -PnativeWorldPolish`. Проверяет расчистку, отказ при наличии сундука без частичных изменений, обычную и принудительную атаку.
+
+Проверка движения: `python tools/native_navigation_bench.py --exe build/native/windows-x86/generalszh.exe --lab <QA-lab>`. Нужен существующий тестовый профиль; установки и миры не копируются.
+
 ## Диагностика задержки
 
 Во время матча выполните `python tools/watch_latency.py --seconds 30`. Для приватных проверок версий добавьте `--root build/qa/native`. Скрипт только читает снимки состояния и не создаёт файлов.
@@ -88,6 +94,10 @@ Remap исходников зависимостей отключён для ус
 - Рост `ipc_pending` означает, что локальные команды ждут обработки движком. Это не сетевой пинг.
 - Рост `snapshot_age` означает, что новые снимки перестали приходить. Проверьте журнал сессии и поле `error`.
 - Если эти показатели нормальные, но растёт время кадра Minecraft, проверьте рендер через F3 и короткую запись F3+L.
+
+Для отчёта выполните `python tools/watch_latency.py --seconds 30 --capture latency-report.json` и отдайте несколько приказов движения и атаки. Играйте до завершения записи. Скрипт создаёт небольшой запрос и результат в активной сессии, а также указанный отчёт. В нём — время кадров и кликов, версии Java/MC/мода, число потоков CPU и размер памяти Java. Имена игроков, миры и пути установок не записываются.
+
+`frameIntervalMs` — интервалы кадров Minecraft; `sceneIngestMs` и `meshSubmitMs` — обработка и отправка сцены на отрисовку, без отложенной работы GPU. `clickHandlingMs` — выбор цели и отправка клика; `localIpcAckMs` — время до чтения ввода движком, до завершения поворота юнита или подтверждения сетевого хода. `nativeUpdateMs`, `nativeGuiMs`, `nativePublishMs` показывают работу движка, захват интерфейса и публикацию снимка; этапы могут пересекаться, складывать их нельзя. Сравните одиночный и сетевой матч на проблемном компьютере. На старых сборках в отчёте будут только native-замеры; клиентские доступны с beta.13. Если скачет время кадра, дополните отчёт записью Minecraft через F3+L.
 
 Контрольная проверка двух клиентов 26.3: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=120`. В приватное соединение второго клиента добавляются 0/100/300/0 мс RTT с колебаниями, затем проверяется восстановление. `-PnativeStabilityJfr` включает ограниченные по размеру записи Java. Миры и профили тестов используют фиксированные каталоги; копировать проект или установку игры между запусками не нужно.
 
@@ -100,8 +110,8 @@ Remap исходников зависимостей отключён для ус
 4. Отправьте совпадающий тег, например:
 
 ```sh
-git tag v0.2.0-beta.9
-git push origin v0.2.0-beta.9
+git tag v0.2.0-beta.13
+git push origin v0.2.0-beta.13
 ```
 
 5. Откройте **Releases**, проверьте черновик и нажмите **Publish release**. Теги с `-beta` создают предварительные выпуски.

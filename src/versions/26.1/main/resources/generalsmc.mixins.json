@@ -10,7 +10,9 @@
     "StructureMovementMixin",
     "StructureNavigationMixin",
     "StructureExplosionMixin",
-    "SavedDataFolderAccessor"
+    "SavedDataFolderAccessor",
+    "EmpSignalMixin",
+    "EmpMobMixin"
   ],
   "injectors": {
     "defaultRequire": 1

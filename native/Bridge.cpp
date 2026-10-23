@@ -43,6 +43,7 @@
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/Module/BodyModule.h"
+#include "GameLogic/Module/PhysicsUpdate.h"
 #include "GameLogic/Module/ActiveBody.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 #include "GameClient/InGameUI.h"
@@ -64,6 +65,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <cmath>
 #include <deque>
 
@@ -79,6 +81,8 @@ unsigned long long consumed = 0;
 DWORD published = 0;
 DWORD updateStarted=0;
 float fogFocusX=0,fogFocusY=0;DWORD fogPublished=0;
+bool hostEmpVehicles=true;
+float actualMusicVolume=-1;
 bool hostAudioConfigured=false;float hostMusic=1,hostSound=1,hostSpeech=1;
 bool hostFogEnabled=true;
 // Own STL strings only: original AsciiString pools/mutexes are destroyed before C++ statics.
@@ -99,6 +103,8 @@ std::unordered_map<std::string,ObjectID> resourceSites;
 std::unordered_map<std::string,ObjectID> worldSites;
 struct ArmySlot{int kind,color,team;std::string faction;};
 std::unordered_map<int,ArmySlot> armySlots;
+std::unordered_map<int,std::string> armyNames;
+std::unordered_set<unsigned int> forcedProjectiles,forcedOrders;
 struct HostMob {ObjectID object;std::string label;};
 std::unordered_map<std::string,HostMob> hostMobs;
 std::unordered_map<unsigned int,std::string> hostMobKeys;
@@ -106,7 +112,7 @@ struct HostMove {Coord3D goal,position;unsigned int lastProgress;unsigned long l
 std::unordered_map<unsigned int,HostMove> hostMoves;
 bool retryingHostMove=false;
 Coord3D requestedHostMove;bool hasRequestedHostMove=false;
-struct HostCombatEvent {unsigned long long sequence;std::string target;unsigned int source;float amount,x,y,z,radius;int damageType;};
+struct HostCombatEvent {unsigned long long sequence;std::string target;unsigned int source;float amount,x,y,z,radius;int damageType;bool forcedAttack=false;unsigned int disabledFrames=0;};
 std::deque<HostCombatEvent> hostCombatEvents;unsigned long long combatSequence=0;
 float healthUnitsPerPoint(){auto t=TheThingFactory->findTemplate("AmericaInfantryRanger",false);if(!t)return 0;auto& modules=t->getBehaviorModuleInfo();for(int i=0;i<modules.getCount();++i)if(modules.getNthName(i)=="ActiveBody")return static_cast<const ActiveBodyModuleData*>(modules.getNthData(i))->m_maxHealth/20.f;return 0;}
 
@@ -134,6 +140,7 @@ DWORD lastLeftClick=0;int lastLeftX=-1000,lastLeftY=-1000;bool nextDoubleClick=f
 struct PointerSample{Coord3D position;unsigned int object;DWORD stamp=timeGetTime();};
 std::unordered_map<unsigned long long,PointerSample> pointerSamples;
 unsigned long long pointerKey(int x,int y){return (static_cast<unsigned long long>(static_cast<unsigned int>(x))<<32)|static_cast<unsigned int>(y);}
+bool hostInputSuspended=false,hostInputWasEnabled=true;
 bool rightButtonHeld=false,leftButtonHeld=false;bool pointerAnchor=false;DWORD anchorReleased=0;ICoord2D anchorScreen={};Coord3D anchorPosition={};
 Coord3D worldPosition = {};
 unsigned int worldObject = 0;
@@ -201,7 +208,7 @@ void start(std::istringstream& in) {
     TheSkirmishGameInfo->reset();
     TheSkirmishGameInfo->setLocalIP(0);
     TheSkirmishGameInfo->enterGame();
-    GameSlot human; UnicodeString name; name.translate("Minecraft");
+    GameSlot human; UnicodeString name; name.translate(armyNames.count(0)?armyNames.at(0).c_str():"Minecraft");
     human.setState(SLOT_PLAYER, name, 0);
     human.setColor(color); human.setPlayerTemplate(side); human.setStartPos(0);
     human.setTeamNumber(-1); human.setMapAvailability(true); human.setAccept();
@@ -218,7 +225,7 @@ void start(std::istringstream& in) {
             if(found==armySlots.end()){entry.setState(SLOT_CLOSED);TheSkirmishGameInfo->setSlot(slot,entry);continue;}
             const auto& c=found->second;int index=ThePlayerTemplateStore->getTemplateNumByName(c.faction.c_str());
             if(index<0||!ThePlayerTemplateStore->getNthPlayerTemplate(index)->isPlayableSide()||c.color<0||c.color>=TheMultiplayerSettings->getNumColors()){lastError="Invalid army faction or color";return;}
-            UnicodeString label;label.translate(("Minecraft"+std::to_string(slot+1)).c_str());
+            UnicodeString label;label.translate(armyNames.count(slot)?armyNames.at(slot).c_str():("Minecraft"+std::to_string(slot+1)).c_str());
             entry.setState(c.kind==0?SLOT_PLAYER:c.kind==1?SLOT_EASY_AI:c.kind==2?SLOT_MED_AI:SLOT_BRUTAL_AI,label,slot);
             entry.setPlayerTemplate(index);entry.setColor(c.color);entry.setTeamNumber(c.team);entry.setStartPos(slot);entry.setMapAvailability(true);entry.setAccept();TheSkirmishGameInfo->setSlot(slot,entry);
         }
@@ -235,7 +242,8 @@ void start(std::istringstream& in) {
     msg->appendIntegerArgument(0);
     msg->appendIntegerArgument(30);
     lastError.clear();
-    columns.clear(); terrainRevision = 0; keys.clear();hostMoves.clear();
+    hostInputSuspended=false;hostInputWasEnabled=true;
+    forcedProjectiles.clear();forcedOrders.clear();columns.clear(); terrainRevision = 0; keys.clear();hostMoves.clear();
     resourceSites.clear();worldSites.clear();originalResourcesRemoved=false;hostMobs.clear();hostMobKeys.clear();hostCombatEvents.clear();combatSequence=0;
 }
 unsigned int mouseClick(unsigned int message,int x,int y){
@@ -245,13 +253,25 @@ unsigned int mouseClick(unsigned int message,int x,int y){
 }
 void command(const std::string& text) {
     std::istringstream in(text); std::string verb; in >> verb;
+    if(verb=="TEST_GRID"&&std::getenv("ZHMC_TEST")){
+        int x,y,w,h;if(!(in>>x>>y>>w>>h)||w<1||h<1||w*h>16384){lastError="Invalid grid fixture";return;}
+        std::ofstream out(root/"grid-test.json");out<<'[';bool comma=false;
+        for(int dy=0;dy<h;++dy)for(int dx=0;dx<w;++dx)if(auto c=TheAI->pathfinder()->getCell(LAYER_GROUND,x+dx,y+dy)){
+            if(comma)out<<',';comma=true;out<<'['<<x+dx<<','<<y+dy<<','<<c->getPosUnit()<<','<<c->getGoalUnit()<<','<<c->getObstacleID()<<']';
+        }out<<']';return;
+    }
+    if(verb=="MATCH_NAME"){
+        int slot;std::string name;if(TheGameLogic->isInGame()||!(in>>slot>>std::quoted(name))||slot<0||slot>=MAX_SLOTS||name.empty()||name.size()>256||name.find_first_of("\r\n")!=std::string::npos){lastError="Invalid army name";return;}
+        armyNames[slot]=name;lastError.clear();return;
+    }
     if(verb=="MATCH_SLOT"){
         int slot,kind,color,team;std::string faction;
         if(TheGameLogic->isInGame()||!(in>>slot>>kind>>color>>team>>std::quoted(faction))||slot<0||slot>=MAX_SLOTS||kind<0||kind>3||team< -1||team>=MAX_SLOTS||faction.size()>128){lastError="Invalid match slot";return;}
         armySlots[slot]={kind,color,team,faction};lastError.clear();return;
     }
     if(verb=="BEGIN_SHARED_AUTHORITY"){beginSharedAuthority();return;}
-    if(verb=="HOST_BATCH"){std::string line;int count=0;while(std::getline(in,line)&&count++<512)if(line.rfind("MOB_SYNC ",0)==0||line.rfind("MOB_DROP ",0)==0||line.rfind("MOB_KILLED ",0)==0||line.rfind("COMBAT_ACK ",0)==0||line.rfind("HOST_DAMAGE ",0)==0)command(line);return;}
+    if(verb=="HOST_EMP_RULES"){int value;if(in>>value)hostEmpVehicles=value!=0;return;}
+    if(verb=="HOST_BATCH"){std::string line;int count=0;while(std::getline(in,line)&&count++<512)if(line.rfind("HOST_EMP_RULES ",0)==0||line.rfind("MOB_SYNC ",0)==0||line.rfind("MOB_DROP ",0)==0||line.rfind("MOB_KILLED ",0)==0||line.rfind("COMBAT_ACK ",0)==0||line.rfind("HOST_DAMAGE ",0)==0)command(line);return;}
     if(verb=="DEBUG_MONEY"){
         unsigned int amount;if(!(in>>amount)||amount>1000000){lastError="Debug money must be 0..1000000";return;}
         if(auto player=ThePlayerList->getLocalPlayer())player->getMoney()->deposit(amount,false,false);return;
@@ -395,12 +415,14 @@ void command(const std::string& text) {
         std::string name;Coord3D p;if(!(in>>name>>p.x>>p.y>>p.z)){lastError="Malformed test spawn";return;}
         auto t=TheThingFactory->findTemplate(name.c_str(),false);if(!t){lastError="Unknown test template";return;}
         auto owner=ThePlayerList->getLocalPlayer();int index;if(in>>index){if(index<0||index>=ThePlayerList->getPlayerCount()){lastError="Invalid fixture owner";return;}owner=ThePlayerList->getNthPlayer(index);}
+        float angle=0;in>>angle;if(!std::isfinite(angle)){lastError="Invalid fixture orientation";return;}
         // Script construction must run original completion callbacks (notably supply-centre registration).
-        auto o=t->isKindOf(KINDOF_STRUCTURE)?TheBuildAssistant->buildObjectNow(nullptr,t,&p,0,owner):TheThingFactory->newObject(t,owner->getDefaultTeam());
-        if(o){o->setPosition(&p);if(t->isKindOf(KINDOF_STRUCTURE)){o->clearStatus(MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_UNDER_CONSTRUCTION));o->setConstructionPercent(CONSTRUCTION_COMPLETE);}}
+        auto o=t->isKindOf(KINDOF_STRUCTURE)?TheBuildAssistant->buildObjectNow(nullptr,t,&p,angle,owner):TheThingFactory->newObject(t,owner->getDefaultTeam());
+        if(o){o->setPosition(&p);o->setOrientation(angle);if(t->isKindOf(KINDOF_STRUCTURE)){o->clearStatus(MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_UNDER_CONSTRUCTION));o->setConstructionPercent(CONSTRUCTION_COMPLETE);}}
         else {lastError="Test construction rejected";return;}lastError.clear();return;
     }
     if(verb=="TEST_TERRAIN_EXTREMES"&&std::getenv("ZHMC_TEST")){Coord3D a,b;float lo=0,hi=0;if(in>>a.x>>a.y>>a.z>>b.x>>b.y>>b.z){bool valid=ThePartitionManager->estimateTerrainExtremesAlongLine(a,b,&lo,&hi,nullptr,nullptr);std::ofstream out(root/"terrain-extremes-test.json");out<<"{\"valid\":"<<(valid?"true":"false")<<",\"min\":"<<lo<<",\"max\":"<<hi<<'}';}return;}
+    if(verb=="TEST_ATTACK"&&std::getenv("ZHMC_TEST")){unsigned int id,target;int forced;if(in>>id>>target>>forced){auto object=TheGameLogic->findObjectByID(static_cast<ObjectID>(id));auto victim=TheGameLogic->findObjectByID(static_cast<ObjectID>(target));auto ai=object?object->getAI():nullptr;if(ai&&victim){if(forced)ai->aiForceAttackObject(victim,NO_MAX_SHOTS_LIMIT,CMD_FROM_PLAYER);else ai->aiAttackObject(victim,NO_MAX_SHOTS_LIMIT,CMD_FROM_PLAYER);}}return;}
     if(verb=="TEST_FIRE" && std::getenv("ZHMC_TEST")){unsigned int id;Coord3D p;if(in>>id>>p.x>>p.y>>p.z){auto o=TheGameLogic->findObjectByID(static_cast<ObjectID>(id));if(o&&o->getCurrentWeapon())o->getCurrentWeapon()->fireWeapon(o,&p);}return;}
     if(verb=="TEST_PROJECT"&&std::getenv("ZHMC_TEST")){ICoord2D screen;Coord3D p={},plane={};if(in>>screen.x>>screen.y){bool valid=hostScreenToTerrain(&screen,&p),zero=hostScreenToWorld(&screen,&plane,0);auto target=worldPointerDrawable(&screen,0);std::ofstream out(root/"project-test.json");out<<"{\"valid\":"<<(valid?"true":"false")<<",\"zeroPlane\":"<<(zero?"true":"false")<<",\"eyeZ\":"<<hostEye.z<<",\"picked\":"<<(target&&target->getObject()?target->getObject()->getID():0)<<",\"x\":"<<p.x<<",\"y\":"<<p.y<<",\"z\":"<<p.z<<'}';}return;}
     if(verb=="TEST_STALL" && std::getenv("ZHMC_TEST")){unsigned int id;if(in>>id){auto o=TheGameLogic->findObjectByID(static_cast<ObjectID>(id));if(o&&o->getAI())o->getAI()->aiIdle(CMD_FROM_AI);}return;}
@@ -441,7 +463,19 @@ void command(const std::string& text) {
     } else if (verb == "MODE") {
         int active;
         if (!(in >> active) || (active!=0 && active!=1)) { lastError="Invalid world mode";return; }
-        if(!active)TheInGameUI->placeBuildAvailable(nullptr,nullptr);rightButtonHeld=false;worldPointer=false;pointerAnchor=false;pointerSamples.clear();setWorldViewMode(active!=0);lastError.clear();
+        if(!active){
+            if(!hostInputSuspended){hostInputWasEnabled=TheInGameUI->getInputEnabled();hostInputSuspended=true;}
+            // Use SAGE's cinematic/input-context reset: lost modifier releases must not
+            // leave Alt waypoints, Ctrl attack or Shift selection latched after Minecraft.
+            TheInGameUI->setInputEnabled(false);
+            TheInGameUI->placeBuildAvailable(nullptr,nullptr);TheInGameUI->setGUICommand(nullptr);
+            TheInGameUI->setScrolling(false);TheInGameUI->clearAttackMoveToMode();
+            IRegion2D empty={};TheInGameUI->setHostDragRegion(false,empty);
+            if(TheWindowManager){if(auto captor=TheWindowManager->winGetCapture())TheWindowManager->winRelease(captor);TheWindowManager->winSetGrabWindow(nullptr);}
+            for(unsigned char code:{0x2a,0x36,0x1d,0x9d,0x38,0xb8})keys.push_back({code,false,timeGetTime()});
+        }else if(hostInputSuspended){TheInGameUI->setInputEnabled(hostInputWasEnabled);hostInputSuspended=false;}
+        rightButtonHeld=leftButtonHeld=false;worldPointer=false;pointerAnchor=false;lastLeftWorldObject=pinnedLeftObject=0;nextDoubleClick=false;
+        pointerSamples.clear();setWorldViewMode(active!=0);if(TheMouse)TheMouse->resetTooltipDelay();lastError.clear();
     } else if (verb == "WORLD_MOUSE") {
         unsigned int message, id, buttons; Coord3D p;
         if (!(in>>message>>p.x>>p.y>>p.z>>id>>buttons) || !std::isfinite(p.x)||!std::isfinite(p.y)||!std::isfinite(p.z)||buttons>31||
@@ -513,7 +547,7 @@ void command(const std::string& text) {
             if (column != changes.end() && column->second.type != -1) {
                 float oldHeight = TheTerrainLogic->getLayerHeight(position.x, position.y, LAYER_GROUND);
                 float delta = column->second.height - oldHeight;
-                if (std::fabs(delta) > .01f) { position.z += delta; object->setPosition(&position); }
+                if (std::fabs(delta) > .01f) { position.z = (object->isKindOf(KINDOF_STRUCTURE)||(!object->isKindOf(KINDOF_AIRCRAFT)&&!object->isAirborneTarget()&&!object->isUsingAirborneLocomotor())) ? column->second.height : position.z+delta; object->setPosition(&position); }
             }
         }
         for(auto& entry:changes)if(entry.second.type==-1)columns.erase(entry.first);else columns.insert_or_assign(entry.first,std::move(entry.second));
@@ -556,6 +590,7 @@ void command(const std::string& text) {
 }
 void synchronizedHostCommand(const std::string& text){command(text);}
 void hostLogicTick() {
+    for(auto it=forcedProjectiles.begin();it!=forcedProjectiles.end();)if(!TheGameLogic->findObjectByID(static_cast<ObjectID>(*it)))it=forcedProjectiles.erase(it);else ++it;
     // Loading a new host tile must allow the original AI to retry a failed move.
     if(TheGameLogic&&worldTransportActive()&&TheGameLogic->isInGame())for(auto it=hostMoves.begin();it!=hostMoves.end();){
         auto o=TheGameLogic->findObjectByID(static_cast<ObjectID>(it->first));auto ai=o?o->getAI():nullptr;
@@ -570,10 +605,13 @@ void hostLogicTick() {
         }++it;
     }
     if(TheGameLogic&&worldTransportActive()&&TheGameLogic->isInGame())for(auto o=TheGameLogic->getFirstObject();o;o=o->getNextObject()){
+        if(!isExternalObject(o->getID())&&!o->isKindOf(KINDOF_AIRCRAFT)&&!o->isKindOf(KINDOF_PROJECTILE)&&!o->isContained()&&!o->isAirborneTarget()&&!o->isUsingAirborneLocomotor()&&o->getLayer()==LAYER_GROUND){
+            float floor;if(terrainHeight(o->getPosition()->x,o->getPosition()->y,floor))if(auto physics=o->getPhysics())if(physics->isMotive()){physics->setStickToGround(true);physics->setAllowToFall(false);}
+        }
         if(isExternalObject(o->getID())||!o->isKindOf(KINDOF_INFANTRY)||o->isKindOf(KINDOF_PROJECTILE))continue;
         // Original meshes retain their uniform scale. Host infantry collision fits a Minecraft player doorway.
         auto& g=o->getGeometryInfo();float radius=.3f*worldUnitsPerBlock(),height=1.8f*worldUnitsPerBlock();
-        if(std::fabs(g.getMajorRadius()-radius)>.001f||std::fabs(g.getMinorRadius()-radius)>.001f||std::fabs(g.getMaxHeightAbovePosition()-height)>.001f)o->setGeometryInfo(GeometryInfo(GEOMETRY_CYLINDER,true,height,radius,radius));
+        if(std::fabs(g.getMajorRadius()-radius)>.001f||std::fabs(g.getMinorRadius()-radius)>.001f||std::fabs(g.getMaxHeightAbovePosition()-height)>.001f){TheAI->pathfinder()->removeUnitFromPathfindMap(o);o->setGeometryInfo(GeometryInfo(GEOMETRY_CYLINDER,true,height,radius,radius));TheAI->pathfinder()->updatePos(o,o->getPosition());if(auto ai=o->getAI())if(!ai->isIdle())TheAI->pathfinder()->updateGoal(o,ai->getGoalPosition(),o->getDestinationLayer());}
     }
 }
 void beforeUpdate() {
@@ -590,7 +628,12 @@ void beforeUpdate() {
     };
     static HostParent parent;
     if(parent.exited()){TheGameEngine->setQuitting(true);return;}
-    if(remoteInput()&&hostAudioConfigured&&TheAudio)TheAudio->unmuteAudio(AudioManager::MuteAudioReason_WindowFocus);
+    if(remoteInput()&&hostAudioConfigured&&TheAudio){
+        TheAudio->unmuteAudio(AudioManager::MuteAudioReason_WindowFocus);
+        TheAudio->setVolume(hostMusic,(AudioAffect)(AudioAffect_Music|AudioAffect_SystemSetting));
+        TheAudio->setVolume(hostSound,(AudioAffect)(AudioAffect_Sound|AudioAffect_Sound3D|AudioAffect_SystemSetting));
+        TheAudio->setVolume(hostSpeech,(AudioAffect)(AudioAffect_Speech|AudioAffect_SystemSetting));
+    }
     if(!lockstepActive())hostLogicTick();
     if(TheGameLogic&&(TheGameLogic->isLoadingMap()||TheGameLogic->isLoadingSave()))return;
     // Immutable, atomically published files. A per-launch UUID prevents replaying old commands.
@@ -665,6 +708,7 @@ void afterUpdate() {
         << ",\"pendingCommand\":" << json(TheInGameUI && TheInGameUI->getGUICommand() ? TheInGameUI->getGUICommand()->getName().str() : "")
         << ",\"pendingBuild\":" << (TheInGameUI && TheInGameUI->getPendingPlaceType() ? "true" : "false")
         << ",\"pendingBuildType\":" << json(TheInGameUI && TheInGameUI->getPendingPlaceType() ? TheInGameUI->getPendingPlaceType()->getName().str() : "")
+        << ",\"waypointMode\":" << (TheInGameUI && TheInGameUI->isInWaypointMode()?"true":"false")
         << ",\"uiInput\":" << (TheInGameUI && TheInGameUI->getInputEnabled() ? "true" : "false")
         << ",\"shellActive\":" << (TheShell && TheShell->isShellActive() ? "true" : "false")
         << ",\"mouseLocked\":" << (TheTacticalView && TheTacticalView->isMouseLocked() ? "true" : "false")
@@ -685,7 +729,7 @@ void afterUpdate() {
     radarState(out);cursorState(out);sceneState(out);guiClockState(out);lockstepState(out);
     int buildings[MAX_PLAYER_COUNT]={};for(auto object=TheGameLogic->getFirstObject();object;object=object->getNextObject())if(object->isKindOf(KINDOF_STRUCTURE)&&object->isKindOf(KINDOF_MP_COUNT_FOR_VICTORY)&&object->getBodyModule()->getHealth()>0){auto p=object->getControllingPlayer();if(p&&p->getPlayerIndex()>=0&&p->getPlayerIndex()<MAX_PLAYER_COUNT)++buildings[p->getPlayerIndex()];}
     out<<",\"armyStatus\":[";bool armyComma=false;for(int i=2;i<ThePlayerList->getPlayerCount();++i)if(auto p=ThePlayerList->getNthPlayer(i)){if(armyComma)out<<',';armyComma=true;out<<"{\"player\":"<<i<<",\"rank\":"<<p->getRankLevel()<<",\"experience\":"<<p->getSkillPoints()<<",\"buildings\":"<<buildings[i]<<'}';}out<<']';
-    out<<",\"hostAudioConfigured\":"<<(hostAudioConfigured?"true":"false")<<",\"musicPlaying\":"<<(TheAudio&&TheAudio->isMusicPlaying()?"true":"false")<<",\"musicVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Music|AudioAffect_SystemSetting)):0)<<",\"soundVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Sound|AudioAffect_SystemSetting)):0)<<",\"speechVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Speech|AudioAffect_SystemSetting)):0);
+    out<<",\"actualMusicVolume\":"<<actualMusicVolume<<",\"hostAudioConfigured\":"<<(hostAudioConfigured?"true":"false")<<",\"musicPlaying\":"<<(TheAudio&&TheAudio->isMusicPlaying()?"true":"false")<<",\"musicVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Music|AudioAffect_SystemSetting)):0)<<",\"soundVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Sound|AudioAffect_SystemSetting)):0)<<",\"speechVolume\":"<<(TheAudio?TheAudio->getVolume((AudioAffect)(AudioAffect_Speech|AudioAffect_SystemSetting)):0);
     out<<",\"audioEnabled\":"<<(TheGlobalData->m_audioOn?"true":"false")<<",\"audio2DSamples\":"<<(TheAudio?TheAudio->getNum2DSamples():0)<<",\"audio3DSamples\":"<<(TheAudio?TheAudio->getNum3DSamples():0)<<",\"audio2DUsed\":"<<(TheAudio?TheAudio->getNum2DSamples()-TheAudio->getNumAvailable2DSamples():0)<<",\"audio3DUsed\":"<<(TheAudio?TheAudio->getNum3DSamples()-TheAudio->getNumAvailable3DSamples():0);
     out<<",\"specialPowers\":[";bool powerComma=false;
     for(auto object=TheGameLogic->getFirstObject();object;object=object->getNextObject())if(object->isLocallyControlled())for(auto modules=object->getBehaviorModules();modules&&*modules;++modules)if(auto power=(*modules)->getSpecialPower()){
@@ -704,6 +748,8 @@ void afterUpdate() {
     }
     out<<"],\"playableFactions\":[";bool playableComma=false;for(int i=0;i<ThePlayerTemplateStore->getPlayerTemplateCount();++i){auto t=ThePlayerTemplateStore->getNthPlayerTemplate(i);if(!t->isPlayableSide()||t->getSide()=="Boss")continue;if(playableComma)out<<',';playableComma=true;out<<json(t->getName().str());}
     out<<"],\"factionNames\":{";bool labelComma=false;for(int i=0;i<ThePlayerTemplateStore->getPlayerTemplateCount();++i){auto t=ThePlayerTemplateStore->getNthPlayerTemplate(i);if(!t->isPlayableSide()||t->getSide()=="Boss")continue;auto label=t->getDisplayName();int size=WideCharToMultiByte(CP_UTF8,0,reinterpret_cast<const wchar_t*>(label.str()),-1,nullptr,0,nullptr,nullptr);std::string text;if(size>0){text.resize(size);WideCharToMultiByte(CP_UTF8,0,reinterpret_cast<const wchar_t*>(label.str()),-1,text.data(),size,nullptr,nullptr);text.pop_back();}if(labelComma)out<<',';labelComma=true;out<<json(t->getName().str())<<':'<<json(text.c_str(),true);}
+    out<<"},\"startRadii\":{";bool areaComma=false;for(int i=0;i<ThePlayerTemplateStore->getPlayerTemplateCount();++i){auto t=ThePlayerTemplateStore->getNthPlayerTemplate(i);if(!t->isPlayableSide()||t->getSide()=="Boss")continue;auto b=TheThingFactory->findTemplate(t->getStartingBuilding(),false);if(!b)continue;auto& g=b->getTemplateGeometryInfo();int r=std::min(24,(int)std::ceil(std::hypot(g.getMajorRadius(),g.getMinorRadius())/worldUnitsPerBlock())+3);if(areaComma)out<<',';areaComma=true;out<<json(t->getName().str())<<':'<<r;}
+
     out<<"},\"colors\":[";for(int i=0;i<TheMultiplayerSettings->getNumColors();++i){if(i)out<<',';auto c=TheMultiplayerSettings->getColor(i);out<<"{\"id\":"<<i<<",\"label\":"<<json(c->getTooltipName().str())<<",\"color\":"<<(unsigned int)c->getColor()<<'}';}out<<"],\"teamColor\":"<<(TheSkirmishGameInfo?TheSkirmishGameInfo->getConstSlot(0)->getColor():0);
     out << ",\"maps\":[";
     if(cachedMaps.empty()){FilenameList nativeMaps;TheArchiveFileSystem->getFileListInDirectory("Maps", "", "*.map", nativeMaps, true);for(const auto& map:nativeMaps)cachedMaps.emplace_back(map.str());}
@@ -732,7 +778,7 @@ void afterUpdate() {
         auto key=hostMobKeys.find(object->getID());auto& geometry=object->getGeometryInfo();out<<",\"externalKey\":"<<json(key==hostMobKeys.end()?"":key->second.c_str())<<",\"cloaked\":"<<(object->getStatusBits().test(OBJECT_STATUS_STEALTHED)&&!object->getStatusBits().test(OBJECT_STATUS_DETECTED)?"true":"false")<<",\"geometryMajor\":"<<geometry.getMajorRadius()<<",\"geometryMinor\":"<<geometry.getMinorRadius()<<",\"geometryHeight\":"<<geometry.getMaxHeightAbovePosition();
         out<<'}';
     }
-    out<<"],\"healthUnitsPerPoint\":"<<healthUnitsPerPoint()<<",\"combatEvents\":[";comma=false;for(auto& e:hostCombatEvents){if(comma)out<<',';comma=true;out<<"{\"sequence\":"<<e.sequence<<",\"target\":"<<json(e.target.c_str())<<",\"source\":"<<e.source<<",\"amount\":"<<e.amount<<",\"x\":"<<e.x<<",\"y\":"<<e.y<<",\"z\":"<<e.z<<",\"radius\":"<<e.radius<<",\"damageType\":"<<e.damageType<<",\"explosive\":"<<(e.damageType==DAMAGE_EXPLOSION?"true":"false")<<'}';}
+    out<<"],\"healthUnitsPerPoint\":"<<healthUnitsPerPoint()<<",\"combatEvents\":[";comma=false;for(auto& e:hostCombatEvents){if(comma)out<<',';comma=true;out<<"{\"sequence\":"<<e.sequence<<",\"target\":"<<json(e.target.c_str())<<",\"source\":"<<e.source<<",\"amount\":"<<e.amount<<",\"x\":"<<e.x<<",\"y\":"<<e.y<<",\"z\":"<<e.z<<",\"radius\":"<<e.radius<<",\"damageType\":"<<e.damageType<<",\"disabledFrames\":"<<e.disabledFrames<<",\"forcedAttack\":"<<(e.forcedAttack?"true":"false")<<",\"explosive\":"<<(e.damageType==DAMAGE_EXPLOSION?"true":"false")<<'}';}
     out<<"]";healthBarState(out);out << ",\"selected\":[";comma=false;
     for (Object* object=TheGameLogic->getFirstObject();object;object=object->getNextObject()) {
         auto draw=object->getDrawable();if(!draw||!TheInGameUI->isDrawableSelected(draw->getID()))continue;
@@ -900,9 +946,33 @@ void selectionProbe(unsigned int id,int reason){if(!std::getenv("ZHMC_TEST"))ret
 std::string hostMobLabel(unsigned int){return "";}
 bool isExternalObject(unsigned int id){return hostMobKeys.count(id)!=0;}
 bool externalDamage(Object* object,DamageInfo* damage){auto key=hostMobKeys.find(object->getID());if(key==hostMobKeys.end())return false;if(damage->in.m_amount>0&&std::isfinite(damage->in.m_amount)){auto p=object->getPosition();hostCombatEvents.push_back({++combatSequence,key->second,(unsigned int)damage->in.m_sourceID,damage->in.m_amount,p->x,p->y,p->z,0,(int)damage->in.m_damageType});}return true;}
+bool forcedSource(unsigned int id){
+    if(forcedProjectiles.count(id))return true;auto o=TheGameLogic->findObjectByID(static_cast<ObjectID>(id));auto ai=o?o->getAIUpdateInterface():nullptr;
+    return forcedOrders.count(id)&&ai&&(ai->getCurrentStateID()==AI_FORCE_ATTACK_OBJECT||ai->getCurrentStateID()==AI_ATTACK_POSITION);
+}
+namespace {std::unordered_map<unsigned int,unsigned int> hostProjectileSteps;bool resolvingBlockImpact=false;}
+void hostProjectile(Object* projectile,const Object* source){if(!worldTransportActive()||!projectile||!source)return;for(auto it=hostProjectileSteps.begin();it!=hostProjectileSteps.end();)if(!TheGameLogic->findObjectByID(static_cast<ObjectID>(it->first)))it=hostProjectileSteps.erase(it);else ++it;hostProjectileSteps[projectile->getID()]=0;if(forcedSource(source->getID()))forcedProjectiles.insert(projectile->getID());}
+bool hostBlockImpact(){return resolvingBlockImpact;}
+void hostAudioMeter(float value){actualMusicVolume=value;}
+bool hostProjectileMoved(Object* object,const Coord3D* previous){
+    if(resolvingBlockImpact||!worldTransportActive()||!object||!previous||!object->isKindOf(KINDOF_PROJECTILE))return false;
+    auto tracked=hostProjectileSteps.find(object->getID());if(tracked==hostProjectileSteps.end())return false;
+    auto end=*object->getPosition();float dx=end.x-previous->x,dy=end.y-previous->y,dz=end.z-previous->z;
+    if(std::fabs(dx)+std::fabs(dy)+std::fabs(dz)<.0001f)return false;
+    if(tracked->second++==0)return false; // Initial placement is not a projectile flight segment.
+    int steps=std::min(2048,std::max(1,(int)std::ceil(std::max({std::fabs(dx),std::fabs(dy),std::fabs(dz)})/(worldUnitsPerBlock()*.125f))));
+    for(int i=1;i<=steps;++i){float t=(float)i/steps;Coord3D p={previous->x+dx*t,previous->y+dy*t,previous->z+dz*t};auto c=columns.find(cellKey((int)std::floor(p.x/worldUnitsPerBlock()),(int)std::floor(p.y/worldUnitsPerBlock())));if(c==columns.end())continue;
+        bool solid=p.z<c->second.height-.01f;for(auto span:c->second.obstacles)if(p.z>=span.first&&p.z<=span.second)solid=true;
+        if(!solid)continue;
+        // Dispatch the original projectile collision: its own detonation, weapon, FX and splash.
+        resolvingBlockImpact=true;object->setPosition(&p);Coord3D normal={0,0,1};object->onCollide(nullptr,&p,&normal);resolvingBlockImpact=false;
+        return true;
+    }return false;
+}
+
 void hostExplosion(const Coord3D* p,float radius,float amount,unsigned int source,int type){
     if(!worldTransportActive()||!p||!std::isfinite(radius)||!std::isfinite(amount)||radius<=0||amount<=0||(type!=DAMAGE_EXPLOSION&&type!=DAMAGE_ARMOR_PIERCING&&type!=DAMAGE_INFANTRY_MISSILE&&type!=DAMAGE_AURORA_BOMB&&type!=DAMAGE_LAND_MINE&&type!=DAMAGE_JET_MISSILES&&type!=DAMAGE_STEALTHJET_MISSILES&&type!=DAMAGE_FLAME&&type!=DAMAGE_MOLOTOV_COCKTAIL))return;
-    hostCombatEvents.push_back({++combatSequence,"",source,amount,p->x,p->y,p->z,radius,type});
+    hostCombatEvents.push_back({++combatSequence,"",source,amount,p->x,p->y,p->z,radius,type,forcedSource(source)});
     // Private fixture diagnostics only: compare the original blast with imported victim geometry.
     if(std::getenv("ZHMC_TEST")&&type==DAMAGE_EXPLOSION&&amount>=300&&ThePartitionManager){
         std::ofstream log(root/"area-test.txt",std::ios::app);
@@ -918,8 +988,17 @@ void hostExplosion(const Coord3D* p,float radius,float amount,unsigned int sourc
 }
 void hostPlayerCommand(Object* object,const AICommandParms* command){
     if(retryingHostMove||!worldTransportActive()||!object||!command||command->m_cmdSource!=CMD_FROM_PLAYER)return;
+    if(command->m_cmd==AICMD_FORCE_ATTACK_OBJECT||command->m_cmd==AICMD_ATTACK_POSITION)forcedOrders.insert(object->getID());else forcedOrders.erase(object->getID());
     if(command->m_cmd==AICMD_MOVE_TO_POSITION&&!object->isKindOf(KINDOF_AIRCRAFT)&&!isExternalObject(object->getID())){Coord3D goal=command->m_pos;if(hasRequestedHostMove&&!hostTerrainKnown(&requestedHostMove))goal=requestedHostMove;hostMoves[object->getID()]={goal,*object->getPosition(),TheGameLogic->getFrame(),terrainRevision};}
     else hostMoves.erase(object->getID());
 }
 void hostRequestedGroupMove(const Coord3D* goal){hasRequestedHostMove=goal&&worldTransportActive();if(hasRequestedHostMove)requestedHostMove=*goal;}
+}
+
+namespace zhmc {
+bool hostEmpAffectsNative(){return !worldTransportActive()||hostEmpVehicles;}
+void hostEMP(const Coord3D* p,float radius,unsigned int frames,unsigned int source){
+ if(!worldTransportActive()||!p||radius<=0||!std::isfinite(radius)||!frames)return;
+ hostCombatEvents.push_back({++combatSequence,"",source,0,p->x,p->y,p->z,radius,-1,false,frames});
+}
 }

@@ -14,7 +14,8 @@ public final class NativeProfiles {
     private static final Gson JSON = new Gson();
     private static final Set<String> STOCK = Set.of("audio","audioenglish","english","ini","maps","music","patch","shaders","speech","speechenglish","terrain","textures","w3d","w3denglish","window","gensec");
     public record Profile(String id,String name,String game,String base,String mod,boolean allArchives,
-                          List<String> factions,List<NativeSession.TeamColor> colors,String checkedAt,String engineHash,Map<String,String> factionNames,boolean modified) {
+                          List<String> factions,List<NativeSession.TeamColor> colors,String checkedAt,String engineHash,Map<String,String> factionNames,boolean modified,Map<String,Integer> startRadii) {
+        public Profile(String id,String name,String game,String base,String mod,boolean all,List<String> factions,List<NativeSession.TeamColor> colors,String checked,String hash,Map<String,String> labels,boolean modified){this(id,name,game,base,mod,all,factions,colors,checked,hash,labels,modified,Map.of());}
         public Profile(String id,String name,String game,String base,String mod,boolean all,List<String> factions,List<NativeSession.TeamColor> colors,String checked,String hash){this(id,name,game,base,mod,all,factions,colors,checked,hash,Map.of(),false);}
     }
     public record Registry(int schema,String active,List<Profile> profiles) {}
@@ -41,8 +42,36 @@ public final class NativeProfiles {
         write(new Registry(1,r.active().equals(id)?next.isEmpty()?"":next.getFirst().id():r.active(),next));
     }
     private static void write(Registry value) throws IOException {Files.createDirectories(root());Path temp=Files.createTempFile(root(),"profiles-",".tmp");try{Files.writeString(temp,JSON.toJson(value));Files.move(temp,root().resolve("profiles.json"),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}finally{Files.deleteIfExists(temp);}}
-    public static List<String> discover(){List<String> result=new ArrayList<>();for(String s:List.of("C:/Games/Generals ZH","C:/Program Files (x86)/EA Games/Command & Conquer Generals Zero Hour","C:/Program Files/EA Games/Command and Conquer Generals Zero Hour"))if(Files.isRegularFile(Path.of(s,"INIZH.big")))result.add(s);return result;}
-    public static String suggestBase(String game){try{Path p=Path.of(game).toAbsolutePath().getParent();if(p!=null)for(String name:List.of("Generals","Command and Conquer Generals","Command & Conquer Generals"))if(Files.isRegularFile(p.resolve(name).resolve("INI.big")))return p.resolve(name).toString();if(Files.isRegularFile(Path.of(game,"INI.big")))return game;}catch(Exception ignored){}return "";}
+    public record GamePaths(String zeroHour,String generals) {}
+    private static boolean installation(Path p,boolean zh){return Files.isRegularFile(p.resolve(zh?"INIZH.big":"INI.big"))&&Files.isRegularFile(p.resolve(zh?"W3DZH.big":"W3D.big"));}
+    /** Nearby folders only; never recursively scans a drive or runs an installed launcher. */
+    public static GamePaths locate(String input){
+        if(input==null||input.isBlank())return new GamePaths("","");
+        try{
+            Path selected=Path.of(input.strip()).toAbsolutePath().normalize();if(!Files.isDirectory(selected))return new GamePaths("","");
+            var candidates=new LinkedHashSet<Path>();candidates.add(selected);Path parent=selected.getParent();
+            for(Path root:parent==null?List.of(selected):List.of(selected,parent)){
+                try(var dirs=Files.list(root)){dirs.filter(Files::isDirectory).sorted().limit(64).forEach(candidates::add);}catch(IOException ignored){}
+            }
+            var directZh=candidates.stream().filter(p->installation(p,true)).findFirst();var directBase=candidates.stream().filter(p->installation(p,false)).findFirst();
+            if(directZh.isPresent()&&directBase.isPresent())return new GamePaths(directZh.get().toString(),directBase.get().toString());
+            // Common collection/Steam layouts have one extra directory layer.
+            for(Path root:List.copyOf(candidates)){
+                if(candidates.size()>=160)break;
+                if(installation(root,true)||installation(root,false))continue;
+                try(var dirs=Files.list(root)){dirs.filter(Files::isDirectory).sorted().limit(Math.min(8,160-candidates.size())).forEach(candidates::add);}catch(IOException ignored){}
+            }
+            String zh=candidates.stream().filter(p->installation(p,true)).map(Path::toString).findFirst().orElse("");
+            String base=candidates.stream().filter(p->installation(p,false)).map(Path::toString).findFirst().orElse("");
+            return new GamePaths(zh,base);
+        }catch(RuntimeException ignored){return new GamePaths("","");}
+    }
+    public static String browseStart(String input){
+        try{if(input!=null&&!input.isBlank()){Path p=Path.of(input.strip()).toAbsolutePath();while(p!=null){if(Files.isDirectory(p))return p.toString();p=p.getParent();}}}catch(RuntimeException ignored){}
+        return Path.of(System.getProperty("user.home")).toAbsolutePath().toString();
+    }
+    public static List<String> discover(){var found=new LinkedHashSet<String>();for(String root:List.of("C:/Games/Generals ZH","C:/Games/Generals","C:/Program Files (x86)/EA Games/Command & Conquer Generals Zero Hour","C:/Program Files/EA Games/Command and Conquer Generals Zero Hour")){if(!Files.isDirectory(Path.of(root)))continue;var pair=locate(root);if(!pair.zeroHour().isBlank())found.add(pair.zeroHour());}return List.copyOf(found);}
+    public static String suggestBase(String game){return locate(game).generals();}
     public static String suggestName(String game){try{Path source=Path.of(game);try(var files=Files.list(source)){for(var file:files.filter(f->f.getFileName().toString().toLowerCase(Locale.ROOT).endsWith("launchersettings.ini")).toList()){if(Files.size(file)>65536)continue;var matcher=java.util.regex.Pattern.compile("(?im)^Title\\s*=\\s*([^\\r\\n]+)").matcher(Files.readString(file,StandardCharsets.ISO_8859_1));if(matcher.find()){String name=matcher.group(1).trim().replaceFirst("(?i)\\s+Launcher$","");if(!name.isBlank()&&name.length()<=60)return name;}}}if(!launcherArchives(source).isEmpty())return source.getFileName().toString();}catch(Exception ignored){}return "Zero Hour";}
     private static Path source(String input,String label) throws IOException {if(input==null||input.isBlank())throw new IOException(local.generalsmc.LocalText.token("Выберите папку ")+label);Path p=Path.of(input).toRealPath();if(!Files.isDirectory(p))throw new IOException(local.generalsmc.LocalText.token("Нет папки ")+label+": "+p);return p;}
     private static void require(Path p,String file) throws IOException {if(!Files.isRegularFile(p.resolve(file)))throw new IOException(local.generalsmc.LocalText.token("В папке ")+p+local.generalsmc.LocalText.token(" не найден ")+file+local.generalsmc.LocalText.token(". Нужны файлы установленной игры, не её ярлык."));}
@@ -146,7 +175,7 @@ public final class NativeProfiles {
         }
         String hash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(engine(root()))));
         if(Thread.currentThread().isInterrupted())throw new IOException(local.generalsmc.LocalText.token("Подключение отменено"));
-        Profile ready=new Profile(id,name.trim(),game.toString(),base.toString(),mod==null?"":mod.toString(),all,List.copyOf(state.playableFactions()),List.copyOf(state.colors()),java.time.Instant.now().toString(),hash,state.factionNames()==null?Map.of():Map.copyOf(state.factionNames()),mod!=null||all||!launcherArchives(game).isEmpty());
+        Profile ready=new Profile(id,name.trim(),game.toString(),base.toString(),mod==null?"":mod.toString(),all,List.copyOf(state.playableFactions()),List.copyOf(state.colors()),java.time.Instant.now().toString(),hash,state.factionNames()==null?Map.of():Map.copyOf(state.factionNames()),mod!=null||all||!launcherArchives(game).isEmpty(),state.startRadii()==null?Map.of():Map.copyOf(state.startRadii()));
         synchronized(NativeProfiles.class){Registry r=read();List<Profile> next=new ArrayList<>(r.profiles());
             int at=-1;if(replacing!=null){for(int i=0;i<next.size();i++)if(next.get(i).id().equals(replacing))at=i;if(at<0)throw new IOException(local.generalsmc.LocalText.token("Профиль не найден"));next.set(at,ready);}else next.add(ready);
             write(new Registry(1,replacing==null||r.active().equals(replacing)?id:r.active(),List.copyOf(next)));}

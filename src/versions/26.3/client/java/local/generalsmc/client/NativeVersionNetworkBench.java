@@ -27,6 +27,8 @@ final class NativeVersionNetworkBench {
     static int ticks,age,stage;static long began;static boolean done,peerLocated;
     static Path root;static Process peerProcess;static CompletableFuture<?> work;static CompletableFuture<Integer> listener;
     static final List<String> checks=new ArrayList<>();static final Motion motion=new Motion();
+    static int rulesProbe;static boolean previousPreparation;
+    static long peerResumeAt;static boolean peerReturned;
     static volatile int oneWay;static int phase=-1,phaseFrame;static long phaseAt;
     static final List<Map<String,Object>> phases=new ArrayList<>();
     static void next(int value){stage=value;age=0;GeneralsMod.LOG.info("Stability network {} case {}",PEER?"peer":"host",stage);}
@@ -87,6 +89,13 @@ final class NativeVersionNetworkBench {
         root=NativeProfiles.root();if(Files.exists(root.resolve("peer-exit"))){done=true;NativeNetworkClient.leave();mc.stop();return;}
         if(stage==0&&ticks>30){mc.options.pauseOnLostFocus=false;mc.options.guiScale().set(2);mc.options.framerateLimit().set(35);String address="127.0.0.1:"+Integer.getInteger("generalsmc.stabilityPort");ConnectScreen.startConnecting(mc.gui.screen(),mc,ServerAddress.parseString(address),new ServerData("Owned stability test",address,ServerData.Type.LAN),false,null);next(1);}
         else if(stage==1&&mc.player!=null&&mc.level.dimension().equals(GeneralsMod.ARENA)){
+            if(NativeNetworkClient.lobby!=null&&!NativeNetworkClient.lobby.preparing()&&rulesProbe<3){
+                if(rulesProbe==0){NativeNetworkClient.rules=null;NativeNetworkClient.request("rules_get");rulesProbe=1;}
+                else if(rulesProbe==1&&NativeNetworkClient.rules!=null){if(NativeNetworkClient.rules.editable())throw new IllegalStateException("Guest rules screen is editable");previousPreparation=NativeNetworkClient.rules.values().prepareStarts();NativeNetworkClient.request("rules_change",j->j.addProperty("key","prepareStarts"));rulesProbe=2;}
+                else if(rulesProbe==2&&!NativeNetworkClient.error.isBlank()){NativeNetworkClient.rules=null;NativeNetworkClient.request("rules_get");rulesProbe=3;}
+                return;
+            }
+            if(rulesProbe==3){if(NativeNetworkClient.rules==null)return;if(NativeNetworkClient.rules.values().prepareStarts()!=previousPreparation)throw new IllegalStateException("Server accepted guest rule edit");checks.add("Guest sees read-only rules; forged rule-change packet is rejected and world settings stay unchanged");rulesProbe=4;}
             if(NativeNetworkClient.lobby==null){if(age%40==0)NativeNetworkClient.request("join");}
             else if(!NativeNetworkClient.lobby.preparing()){var own=NativeNetworkClient.lobby.members().stream().filter(m->m.player().equals(mc.player.getUUID())).findFirst().orElseThrow();if(own.faction().equals("FactionChina")&&own.start()==1&&own.team()==0&&own.color()==1)next(2);else if(age%20==0)NativeNetworkClient.request("choose",j->{j.addProperty("faction","FactionChina");j.addProperty("color",1);j.addProperty("team",0);j.addProperty("start",1);});}
         }else if(stage==2&&viewReady()){
@@ -94,6 +103,8 @@ final class NativeVersionNetworkBench {
         }else if(stage==3){
             int current=Math.min(3,(int)((System.nanoTime()-began)/1_000_000_000L/Math.max(1,SECONDS/4)));
             if(current!=phase){if(phase>=0)finishPhase();phase=current;oneWay=RTT[phase]/2;phaseFrame=NativeWorldView.current.state.frame();phaseAt=System.nanoTime();GeneralsMod.LOG.info("Stability RTT phase {} ms",RTT[phase]);}
+            if(!peerReturned&&phase==1&&motion.state==0){NativeRtsController.toggle();peerResumeAt=System.nanoTime()+2_000_000_000L;peerReturned=true;checks.add("Peer switches to Minecraft while the server and other army keep simulating");}
+            if(peerResumeAt!=0){if(System.nanoTime()<peerResumeAt)return;NativeRtsController.toggle();peerResumeAt=0;checks.add("Peer restores RTS input after F8 during simulated network latency");}
             motion.tick(mc);if(age%100==0)writeProgress("peer-progress.json");
             if((System.nanoTime()-began)/1e9>SECONDS&&motion.state==0){finishPhase();finish(mc,"PASS","");}
         }

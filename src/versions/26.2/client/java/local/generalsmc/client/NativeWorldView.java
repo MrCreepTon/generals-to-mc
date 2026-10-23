@@ -42,6 +42,8 @@ public final class NativeWorldView implements AutoCloseable {
     public NativeSession.State state;
     public Scene scene;
     public long drawnVertices,drawCalls;
+    public long sceneUpdateNanos,drawNanos;public int lightSamples;
+    private final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap frameLights=new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
     public long selectionCommand;
     private Scene previousScene;
     private Map<Integer,NativeSession.Actor> actors=Map.of();
@@ -66,8 +68,10 @@ public final class NativeWorldView implements AutoCloseable {
     }
     public static boolean active(){return current!=null&&!current.closed;}
     public static boolean controlling(){return active()&&Minecraft.getInstance().gui.screen() instanceof NativeWorldScreen;}
+    private Double startYaw;
+    public void face(double x,double z){startYaw=Math.toDegrees(Math.atan2(cameraX-x,z-cameraZ));cameraYaw=renderYaw=startYaw;}
     public void tick(NativeSession.State state) {
-        if(this.state==null){cameraSerial=state.cameraSerial();rotationSerial=state.rotationSerial();scrollX=state.scrollX();scrollY=state.scrollY();cameraYaw=renderYaw=Math.toDegrees(state.cameraAngle());}
+        if(this.state==null){cameraSerial=state.cameraSerial();rotationSerial=state.rotationSerial();scrollX=state.scrollX();scrollY=state.scrollY();cameraYaw=renderYaw=Math.toDegrees(state.cameraAngle());if(startYaw!=null)cameraYaw=renderYaw=startYaw;}
         if(this.state!=state){var next=new HashMap<Integer,NativeSession.Actor>();for(var a:state.objects())next.put(a.id(),a);actors=next;}
         this.state=state;fog.tick();
         if(System.currentTimeMillis()>=nextScope){nextScope=System.currentTimeMillis()+250;
@@ -80,15 +84,25 @@ public final class NativeWorldView implements AutoCloseable {
         var mc=Minecraft.getInstance();var focus=BlockPos.containing(cameraX,cameraY,cameraZ);
         if(controlling()&&mc.level.hasChunkAt(focus)){double surface=local.generalsmc.nativebridge.WorldSurface.ground(mc.level,focus.getX(),focus.getZ());if(Double.isFinite(surface))cameraY=surface;}
         if(state.selected()!=null&&state.consumed()>=selectionCommand){selection.clear();selection.addAll(state.selected());}
+        pumpScene();
+    }
+    private long nextStateRead;
+    private java.nio.file.attribute.FileTime sceneStamp;
+    private void renderFrame(){
+        long now=System.nanoTime();
+        if(now>=nextStateRead){nextStateRead=now+8_000_000L;try{var fresh=session.read();if(fresh!=null&&fresh!=state)tick(fresh);}catch(IOException error){GeneralsMod.LOG.error("Native render snapshot unavailable",error);close();}}
+        pumpScene();
+    }
+    private void pumpScene(){
         if(pending!=null&&pending.isDone()) {
             try {var value=pending.join();if(value!=null&&(scene==null||value.frame()!=scene.frame())){previousScene=scene;scene=value;interpolationParts=interpolation(previousScene,scene);sceneBounds=buildBounds(value);rememberStructures();sceneReceived=System.nanoTime();}}
             catch(Exception e){GeneralsMod.LOG.error("Original scene decode failed",e);close();}
             pending=null;
         }
         if(!closed&&pending==null&&System.currentTimeMillis()>=nextRead) {
-            nextRead=System.currentTimeMillis()+40;
+            nextRead=System.currentTimeMillis()+8;
             pending=CompletableFuture.supplyAsync(()->{
-                try{return decode(session.directory.resolve("scene.bin"));}
+                try{var file=session.directory.resolve("scene.bin");var stamp=Files.getLastModifiedTime(file);if(stamp.equals(sceneStamp))return null;var decoded=decode(file);sceneStamp=stamp;return decoded;}
                 catch(NoSuchFileException|AccessDeniedException transientReplace){return null;}
                 catch(IOException e){throw new java.io.UncheckedIOException(e);}
             });
@@ -181,21 +195,30 @@ public final class NativeWorldView implements AutoCloseable {
     public int textureCount(){return textures.size();}
     private Map<Integer,AABB> buildBounds(Scene snapshot){
         var ranges=new HashMap<Integer,double[]>();
-        for(var batch:snapshot.batches)for(int i=0;i<batch.count();i++){
-            double x=origin.x+batch.vertices[i*8]/WorldScale.UNITS_PER_BLOCK,y=origin.y+batch.vertices[i*8+2]/WorldScale.UNITS_PER_BLOCK,z=origin.z+batch.vertices[i*8+1]/WorldScale.UNITS_PER_BLOCK;
+        for(var batch:snapshot.batches)if(batch.actor>0){
             var r=ranges.computeIfAbsent(batch.actor,id->new double[]{Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.NEGATIVE_INFINITY,Double.NEGATIVE_INFINITY,Double.NEGATIVE_INFINITY});
-            r[0]=Math.min(r[0],x);r[1]=Math.min(r[1],y);r[2]=Math.min(r[2],z);r[3]=Math.max(r[3],x);r[4]=Math.max(r[4],y);r[5]=Math.max(r[5],z);
+            for(int i=0;i<batch.count();i++){
+                double x=origin.x+batch.vertices[i*8]/WorldScale.UNITS_PER_BLOCK,y=origin.y+batch.vertices[i*8+2]/WorldScale.UNITS_PER_BLOCK,z=origin.z+batch.vertices[i*8+1]/WorldScale.UNITS_PER_BLOCK;
+                r[0]=Math.min(r[0],x);r[1]=Math.min(r[1],y);r[2]=Math.min(r[2],z);r[3]=Math.max(r[3],x);r[4]=Math.max(r[4],y);r[5]=Math.max(r[5],z);
+            }
         }
         var result=new HashMap<Integer,AABB>();ranges.forEach((id,r)->result.put(id,new AABB(r[0],r[1],r[2],r[3],r[4],r[5])));return result;
     }
     public AABB bounds(int actor){return sceneBounds.get(actor);}
     private static Map<Long,Batch> interpolation(Scene previous,Scene current){
-        if(previous==null)return Map.of();var parts=new HashMap<Long,Batch>();for(var b:previous.batches)parts.put(b.part,b);var result=new HashMap<Long,Batch>();
-        for(var b:current.batches){var p=parts.get(b.part);if(p==null||p.actor!=b.actor||p.texture!=b.texture||p.mode!=b.mode||p.count()!=b.count())continue;boolean same=true;for(int k=6;k<b.vertices.length;k+=8)if(p.vertices[k]!=b.vertices[k]||p.vertices[k+1]!=b.vertices[k+1]){same=false;break;}if(same)result.put(b.part,p);}return result;
+        if(previous==null)return Map.of();var parts=new HashMap<Long,Batch>();for(var b:previous.batches)if(b.actor>0)parts.put(b.part,b);var result=new HashMap<Long,Batch>();
+        for(var b:current.batches){if(b.actor<=0)continue;var p=parts.get(b.part);if(p==null||p.actor!=b.actor||p.texture!=b.texture||p.mode!=b.mode||p.count()!=b.count())continue;boolean same=true;for(int k=6;k<b.vertices.length;k+=8)if(p.vertices[k]!=b.vertices[k]||p.vertices[k+1]!=b.vertices[k+1]){same=false;break;}if(same)result.put(b.part,p);}return result;
+    }
+    private int light(NativeSession.Actor actor,Batch batch,net.minecraft.client.multiplayer.ClientLevel level){
+        if(batch.mode!=0&&(batch.mode&0x800)==0)return net.minecraft.util.LightCoordsUtil.FULL_BRIGHT;
+        if(actor!=null&&frameLights.containsKey(actor.id()))return frameLights.get(actor.id());
+        Vec3 anchor=actor==null?origin.world(batch.vertices[0],batch.vertices[1],batch.vertices[2]):origin.world(actor.x(),actor.y(),actor.z());
+        int value=net.minecraft.util.LightCoordsUtil.getLightCoords(level,BlockPos.containing(anchor.add(0,.5,0)));lightSamples++;
+        if(actor!=null)frameLights.put(actor.id(),value);return value;
     }
     public static void render(LevelRenderContext context) {
-        var view=current;
-        if(view==null||view.scene==null||context.poseStack()==null||context.submitNodeCollector()==null)return;
+        long started=System.nanoTime();var view=current;if(view!=null){view.renderFrame();view.sceneUpdateNanos=System.nanoTime()-started;}
+        if(view==null||view.closed||view.scene==null||context.poseStack()==null||context.submitNodeCollector()==null)return;
         var mc=Minecraft.getInstance();var eye=context.levelState().cameraRenderState.pos;
         if(!controlling()&&System.currentTimeMillis()>=view.nextMinecraftBasis){
             view.nextMinecraftBasis=System.currentTimeMillis()+50;
@@ -204,7 +227,7 @@ public final class NativeWorldView implements AutoCloseable {
         }
         double interval=view.previousScene==null?1:Math.max(1,(view.scene.frame-view.previousScene.frame)*1e9/30);
         float blend=(float)Math.min(1,(System.nanoTime()-view.sceneReceived)/interval);
-        var actors=view.actors;
+        var actors=view.actors;view.frameLights.clear();view.lightSamples=0;long drawStarted=System.nanoTime();
         int liveBatches=view.scene.batches.size(),totalBatches=liveBatches+(controlling()?view.rememberedBatches.size():0);
         for(int batchIndex=0;batchIndex<totalBatches;batchIndex++) {
             boolean remembered=batchIndex>=liveBatches;var batch=remembered?view.rememberedBatches.get(batchIndex-liveBatches):view.scene.batches.get(batchIndex);
@@ -215,8 +238,7 @@ public final class NativeWorldView implements AutoCloseable {
                 var actor=actors.get(batch.actor);
                 if(!remembered&&actor!=null&&actor.owner()!=view.state.localPlayerIndex()&&!NativeFog.resource(actor)){var p=view.origin.world(actor.x(),actor.y(),actor.z());if(!NativeFog.visible(p.x,p.z))continue;}
                 if(remembered)previous=null;
-                Vec3 anchor=actor==null?view.origin.world(batch.vertices[0],batch.vertices[1],batch.vertices[2]):view.origin.world(actor.x(),actor.y(),actor.z());
-                int light=(batch.mode==0||(batch.mode&0x800)!=0)?net.minecraft.util.LightCoordsUtil.getLightCoords(mc.level,BlockPos.containing(anchor)):net.minecraft.util.LightCoordsUtil.FULL_BRIGHT;
+                int light=view.light(actor,batch,mc.level);
                 var prior=previous;
                 context.submitNodeCollector().submitCustomGeometry(context.poseStack(),type,(pose,buffer)->{
                 var vertexScratch=new org.joml.Vector3f();var normalScratch=new org.joml.Vector3f();
@@ -236,9 +258,11 @@ public final class NativeWorldView implements AutoCloseable {
                 });view.drawCalls++;
             }catch(IOException e){GeneralsMod.LOG.error("Original world texture load failed",e);view.close();return;}
         }
+        view.drawNanos=System.nanoTime()-drawStarted;
+        NativePerformance.frame(view,started);
     }
     @Override public void close() {
-        if(closed)return;closed=true;if(pending!=null)pending.cancel(false);
+        if(closed)return;closed=true;NativePerformance.close(this);if(pending!=null)pending.cancel(false);
         var manager=Minecraft.getInstance().getTextureManager();for(var texture:textures.values())manager.release(texture);textures.clear();
         fog.close();OriginalWorldMaterial.clear();if(current==this)current=null;
     }

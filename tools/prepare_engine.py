@@ -80,6 +80,7 @@ def main():
     }
 \tCanAttackResult result = ATTACKRESULT_NOT_POSSIBLE;''')
     change(obj, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
+    change(obj,'//USE_PERF_TIMER(Object_reactToTransformChange)','//USE_PERF_TIMER(Object_reactToTransformChange)\n    if(zhmc::hostProjectileMoved(this,oldPos))return;')
     change(obj, 'void Object::attemptDamage( DamageInfo *damageInfo )\n{', 'void Object::attemptDamage( DamageInfo *damageInfo )\n{\n    if (zhmc::externalDamage(this,damageInfo)) return;')
     aiupdate = root / 'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate.cpp'
     change(aiupdate, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
@@ -95,8 +96,35 @@ def main():
     change(missile,'#include \"'+addon.as_posix()+'/Bridge.h\"','#include \"'+addon.as_posix()+'/Bridge.h\"\nnamespace zhmc {bool worldTransportActive();}')
     text=missile.read_text(encoding='utf-8-sig').replace('zhmc::worldTransportActive() ? -4096.f : 0.f','zhmc::worldTransportActive() ? -32768.f : 0.f');missile.write_text(text,encoding='utf-8',newline='\n')
     change(missile,'if (newPos.z < 0)','if (newPos.z < (zhmc::worldTransportActive() ? -32768.f : 0.f))')
+    emp=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/EMPUpdate.cpp'
+    change(emp,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
+    value=emp.read_text(encoding='utf-8-sig')
+    value=value.replace('dr->setInstanceScale( m_currentScale );','if(dr)dr->setInstanceScale( m_currentScale );') if 'if(dr)dr->setInstanceScale' not in value else value
+    value=value.replace('dr->colorTint( &start );','if(dr)dr->colorTint( &start );') if 'if(dr)dr->colorTint' not in value else value
+    value=value.replace('dr->colorFlash( &end, 0, m_tintEnvFadeFrames, ~0u );','if(dr)dr->colorFlash( &end, 0, m_tintEnvFadeFrames, ~0u );') if 'if(dr)dr->colorFlash' not in value else value
+    emp.write_text(value,encoding='utf-8',newline='\n')
+    change(emp,'Real radius = data->m_effectRadius;','Real radius = data->m_effectRadius;\n    zhmc::hostEMP(object->getPosition(),radius,data->m_disabledDuration,(unsigned int)object->getProducerID());\n    if(!zhmc::hostEmpAffectsNative())return;')
+    change(missile,'if (other==nullptr) {','if (other==nullptr && !zhmc::hostBlockImpact()) {')
+    miles=root/'Core/GameEngineDevice/Source/MilesAudioDevice/MilesAudioManager.cpp'
+    change(miles,'#include "MilesAudioDevice/MilesAudioManager.h"','#include "MilesAudioDevice/MilesAudioManager.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
+    change(miles,'return findActiveMusic() != nullptr;','auto playing=findActiveMusic();if(playing){F32 measured=0;AIL_stream_volume_pan(playing->m_stream,&measured,nullptr);zhmc::hostAudioMeter(measured);}return playing != nullptr;')
+    # Minecraft uses its own visibility; SAGE must create FX before the scene exporter can see them.
+    fx=root/'Core/GameEngine/Source/GameClient/FXList.cpp'
+    particles=root/'Core/GameEngine/Source/GameClient/System/ParticleSys.cpp'
+    for source in (fx,particles):
+        change(source,'#include "PreRTS.h"','#include "PreRTS.h"\nstruct Coord3D;namespace zhmc {bool hostMinecraftEffects(const Coord3D*);}')
+    change(fx,'if (ThePartitionManager->getShroudStatusForPlayer(playerIndex, primary) != CELLSHROUD_CLEAR)',
+           'if (!zhmc::hostMinecraftEffects(primary) && ThePartitionManager->getShroudStatusForPlayer(playerIndex, primary) != CELLSHROUD_CLEAR)')
+    change(fx,'if (primary && primary->getShroudedStatus(playerIndex) > OBJECTSHROUD_PARTIAL_CLEAR)',
+           'if (primary && !zhmc::hostMinecraftEffects(primary->getPosition()) && primary->getShroudedStatus(playerIndex) > OBJECTSHROUD_PARTIAL_CLEAR)')
+    change(particles,'visibilityState.isShrouded = attachedTo->getFullyObscuredByShroud();',
+           'visibilityState.isShrouded = attachedTo->getFullyObscuredByShroud() && !zhmc::hostMinecraftEffects(attachedTo->getPosition());')
+    change(particles,'visibilityState.isShrouded = objectAttachedTo->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED;',
+           'visibilityState.isShrouded = objectAttachedTo->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED && !zhmc::hostMinecraftEffects(objectAttachedTo->getPosition());')
     weapon = root / 'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp'
     change(weapon, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
+    change(weapon,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {void hostProjectile(Object*,const Object*);}')
+    change(weapon,'projectile->setProducer(sourceObj);','projectile->setProducer(sourceObj);\n    zhmc::hostProjectile(projectile,sourceObj);')
     change(weapon, '\t\tReal radius = max(primaryRadius, secondaryRadius);', '\t\tReal radius = max(primaryRadius, secondaryRadius);\n        zhmc::hostExplosion(pos,radius,max(primaryDamage,secondaryDamage),(unsigned int)sourceID,(int)damageType);')
     # These effects deal area damage directly, without going through WeaponTemplate.
     neutron=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/NeutronMissileSlowDeathUpdate.cpp'
@@ -148,6 +176,8 @@ def main():
         if new not in wptext:wptext=wptext.replace(old,new)
     waypoint.write_text(wptext,encoding='utf-8',newline='\n')
     portraits=root / 'Core/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp'
+    change(portraits,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "Common/PlayerTemplate.h"')
+    change(portraits,'const Image* portrait = thing->getSelectedPortraitImage();','const Image* portrait = thing->getSelectedPortraitImage();\n        if(zhmc::hasHostView()&&obj->isKindOf(KINDOF_COMMANDCENTER)&&player&&player->getPlayerTemplate()->getGeneralImage())portrait=player->getPlayerTemplate()->getGeneralImage();')
     change(portraits,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
     portrait_source=portraits.read_text(encoding='utf-8-sig')
     if 'm_rightHUDCameoWindow->winClearStatus(WIN_STATUS_IMAGE);for(int i=0;i<MAX_UPGRADE_CAMEO_UPGRADES;++i)' in portrait_source:
@@ -314,6 +344,7 @@ def main():
     change(ui, '#include "W3DDevice/GameClient/W3DInGameUI.h"',
            '#include "W3DDevice/GameClient/W3DInGameUI.h"\n#include "' + addon.as_posix() + '/FrameCapture.h"')
     change(ui, 'void W3DInGameUI::draw()\n{', 'void W3DInGameUI::draw()\n{\n    zhmc::beginGuiLayer();')
+    change(client_ui,'if (TheRecorder->isMultiplayer() && player->isPlayableSide())','if ((TheRecorder->isMultiplayer() || zhmc::hasHostView()) && player->isPlayableSide())')
     change(ui, '\t// repaint all our windows', '\tzhmc::drawWorldIndicators();\n\t// repaint all our windows')
     change(ui, '\tTheDisplay->endBatch();', '\tTheDisplay->endBatch();\n    zhmc::endGuiLayer();')
     winmain = root / 'GeneralsMD/Code/Main/WinMain.cpp'

@@ -32,7 +32,7 @@ public final class GeneralsClient implements ClientModInitializer {
         BlockEntityRendererRegistry.register(local.generalsmc.nativebridge.SiteMarkerEntity.TYPE,SiteMarkerRenderer::new);
         net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register((client,screen,w,h)->{
             if(screen instanceof net.minecraft.client.gui.screens.TitleScreen||screen instanceof net.minecraft.client.gui.screens.PauseScreen)
-                net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(screen).add(net.minecraft.client.gui.components.Button.builder(L.component("Generals"),b->GeneralsGuide.open(screen)).bounds(w-112,6,106,20).build());
+                net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(screen).add(MenuButton.styled(L.component("Generals"),b->GeneralsGuide.open(screen)).bounds(w-112,6,106,20).build());
         });
         EntityRendererRegistry.register(local.generalsmc.nativebridge.NativeActorEntity.TYPE,net.minecraft.client.renderer.entity.NoopRenderer::new);
         ClientCommandRegistrationCallback.EVENT.register((dispatcher,access)->dispatcher.register(

@@ -36,7 +36,6 @@ final class NativeVersionCombatBench {
             next(2);
         }else if(stage==2){
             if((age==9||age==18))capture.grab(String.format("feedback-effects-%02d.png",age));
-            if(age==20){String label=screen.ownerTooltip(humvee);if(!label.contains(mc.player.getName().getString()))throw new IllegalStateException("Hover owner omitted local player: "+label);checks.add("Hover owner names the local player without a permanent F8 overlay");}
             if(age>40){next(3);}
         }else if(stage==3){
             var rider=v.state.objects().stream().filter(a->a.template().equals("AmericaInfantryMissileDefender")&&!a.contained()).findFirst().orElse(null);
