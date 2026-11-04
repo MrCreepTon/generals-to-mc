@@ -17,7 +17,7 @@ final class NativeVersionMigrationBench {
     static int ticks,stage; static boolean done; static CompletableFuture<?> work; static Path world; static byte[] oldSites;
     static final List<String> checks=new ArrayList<>();
     static void tick(Minecraft mc){if(done)return;try{
-        if(++ticks>2400)throw new IllegalStateException("Upgrade oracle timeout at "+stage+" / "+mc.gui.screen());
+        if(++ticks>2400)throw new IllegalStateException("Upgrade oracle timeout at "+stage+" / "+MenuScreens.active(mc.gui.screen()));
         if(stage==0&&ticks>30){
             var source=Path.of(System.getProperty("generalsmc.upgradeWorld")).toAbsolutePath();
             world=mc.gameDirectory.toPath().resolve("saves/GeneralsUpgrade-"+UUID.randomUUID());
@@ -29,7 +29,7 @@ final class NativeVersionMigrationBench {
             var nodes=new ListTag();var node=new CompoundTag();node.putString("key","upgrade-stock");node.putInt("x",128);node.putDouble("y",64);node.putInt("z",128);node.putString("template","SupplyDock");node.putInt("cash",1234);nodes.add(node);data.put("nodes",nodes);tag.put("data",data);NbtIo.writeCompressed(tag,file);
             stage=1;mc.createWorldOpenFlows().openWorld(world.getFileName().toString(),()->{throw new IllegalStateException("Upgrade cancelled");});
         }else if(stage==1){
-            var screen=mc.gui.screen();
+            var screen=MenuScreens.active(mc.gui.screen());
             if(screen instanceof BackupConfirmScreen||screen instanceof ConfirmExperimentalFeaturesScreen||(screen instanceof net.minecraft.client.gui.screens.ConfirmScreen&&screen.getTitle().getString().equals(net.minecraft.network.chat.Component.translatable("upgradeWorld.done").getString()))){var button=screen.children().stream().filter(w->w instanceof Button b&&b.active).map(w->(Button)w).findFirst().orElseThrow();NativeVersionBench.click(mc,button.getMessage().getString());}
             if(mc.player!=null&&mc.getSingleplayerServer()!=null){stage=2;work=CompletableFuture.runAsync(()->{
                 var level=mc.getSingleplayerServer().getLevel(GeneralsMod.ARENA);var pos=new BlockPos(24,64,24);var sites=WorldSiteStore.get(level);

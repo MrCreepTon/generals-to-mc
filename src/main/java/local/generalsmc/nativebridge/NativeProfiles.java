@@ -20,7 +20,7 @@ public final class NativeProfiles {
     }
     public record Registry(int schema,String active,List<Profile> profiles) {}
     public record Mount(String source,String destination,long bytes,long modified) {}
-    public static boolean needsRefresh(Profile p){return p!=null&&(p.factionNames()==null||p.factionNames().isEmpty());}
+    public static boolean needsRefresh(Profile p){return p!=null&&(p.factionNames()==null||p.factionNames().isEmpty()||p.factions()==null||p.factions().isEmpty()||p.colors()==null||p.colors().isEmpty());}
     public static boolean available(Profile p){try{return p!=null&&Files.isRegularFile(Path.of(p.game(),"INIZH.big"))&&Files.isRegularFile(Path.of(p.game(),"W3DZH.big"))&&Files.isRegularFile(Path.of(p.base(),"INI.big"))&&Files.isRegularFile(Path.of(p.base(),"W3D.big"))&&(p.mod()==null||p.mod().isBlank()||Files.isDirectory(Path.of(p.mod())));}catch(Exception ignored){return false;}}
     public static Path root(){String local=System.getenv("LOCALAPPDATA");Path defaultRoot=local==null||local.isBlank()?Path.of(System.getProperty("user.home"),".local/share/GeneralsMinecraft"):Path.of(local,"GeneralsMinecraft");return Path.of(System.getProperty("generalsmc.nativeRoot",defaultRoot.toString()));}
     public static Path engine(Path root){try{return NativeRuntime.prepare(root);}catch(IOException error){throw new java.io.UncheckedIOException(error);}}

@@ -2,6 +2,110 @@
 
 **English** · [Русский](CHANGELOG.ru.md)
 
+## 0.2.0-beta.24
+
+- Reduce the main menu to play modes, world tools, settings, and Back. Move game connections and help into Settings & help.
+- Open a solo skirmish room directly. Ready still starts the match only after every player confirms.
+- Group cash, the superweapon limit, rules, and room closure in Settings. Keep current match values visible in the roster.
+- Combine start selection and resources in Map tabs, including worlds without start markers.
+- Show four common rules first. Keep Combat, Mobs, World, and EMP under Advanced.
+- Keep dropdown arrows visible in native Modern UI controls, with space reserved beside long labels.
+- Preserve Back/Esc navigation, disabled-action explanations, and host permissions across the built-in theme and Modern UI.
+
+## 0.2.0-beta.23
+
+- Restore the guide backdrop on 26.x and keep dividers clear of its progress label and navigation controls.
+- Correct the first-run guide to describe manual Ready and automatic launch once all players confirm.
+- Center the main menu in a compact card. Keep its primary action visible after resizing a scrolled window or changing GUI scale.
+- Preserve selected tabs and toggles in real Modern UI controls. Update action styles when their role changes, and distinguish focus, hover, disabled, and quiet actions.
+- Keep Debug visible with an explanation when unavailable on 26.2 and 26.3.
+- Show an ellipsis for long marker labels and keep the full text in their tooltip. Shorten the English terrain-destruction value.
+
+## 0.2.0-beta.22
+
+- Finish imported supply docks internally so normal clicks can order gathering. Check Chinooks, supply trucks, and GLA workers through the original context command, not a direct AI order.
+- Restore mobile-unit collision with Minecraft players and mobs. Riders do not collide with their own vehicle.
+- Render passengers, the camera, unit icons, and vehicle meshes from the same interpolated frame.
+- Aim turrets with the camera at Minecraft tick rate. Release direct control when switching back to RTS so it cannot cancel commander orders. Stop mounted fire when the attack key is released or the rider dismounts. Add a range-colored reticle and a compact vehicle health bar.
+- Keep the next chat draft when the previous message receives its server acknowledgement.
+- Write native commands and simulation frames through an ordered background queue so disk stalls cannot block rendering or server ticks. Preserve every command and report write failures.
+- Correct supply lifecycle, Ready, Modern UI, driving, and build instructions in both documentation languages. Include the Makefile in source releases.
+
+## 0.2.0-beta.21 — supplies, vehicles and Modern UI
+
+- Reset supply stock for each match; allow selecting visible resource sites through fog.
+- Use real Modern UI fragments and native controls where its official Fabric build is available. Keep the built-in theme elsewhere.
+- Board your own vehicles in Minecraft; drive, fire and leave through normal controls. Validate ownership on the server.
+- Attach arrows to original model triangles. Keep overhead icons and riding cameras in sync with interpolated models.
+- Use live drawable opacity for aircraft; retain intentional stealth. Show oriented collision outlines in F3+B.
+- Let original general powers target unexplored areas. Teach AI armies to research capture and secure imported oil derricks.
+
+## 0.2.0-beta.20 — lobby and camera fixes
+
+- Add manual Ready and room chat. Settings and player changes clear readiness; the match starts when everyone is ready.
+- Show clearing outlines for oil and supply markers. Keep Debug visible with an explanation when unavailable.
+- Register imported supply docks as pathfinding obstacles; supply trucks can still harvest them.
+- Anchor original group numerals to the world each rendered frame. Expand scene streaming with camera zoom and window size to keep edge buildings visible.
+- Preserve original face culling for construction models instead of drawing overlapping backsides.
+
+## 0.2.0-beta.19 — effects, roofs and sound
+
+- Age original particles by committed frames, including network catch-up. Clear the targeting cursor when switching to Minecraft.
+- Keep the clicked height for construction and strikes. Support broad roofs, export tall block collisions and detect superweapon impacts above ground.
+- Apply host starting cash even when a faction INI defines its own balance. Free play also reads cash and the superweapon limit from the world's settings.
+- Match stock music to the local army. Apply Minecraft's music volume to the actual soundtrack stream, including mute.
+- Remove marker light under command centers and refresh lighting around existing markers.
+- Forward Minecraft water currents to ground units; update terrain when water flows.
+
+## 0.2.0-beta.18 — gameplay and menu fixes
+
+- Keep the empty lobby inside its panel; explain locked settings and show the current fog state.
+- Keep the RTS camera when F9 opens the menu. Block Debug in every skirmish, including direct server requests; add an all-powers action to Creative Free play.
+- Restrict red building bibs to the active placement preview. Export unselectable aircraft such as carpet bombers and allow general powers over loaded unexplored terrain.
+- Adapt ECM disabling beams to mobs, sync a blue tint and use the original lightning animation. Keep microwave and EMP mob rules separate; make slimes neutral to the army.
+- Anchor health bars and original status icons to the rendered unit. Project ground-aligned effects onto block levels and keep the camera above craters.
+
+## 0.2.0-beta.17 — a shared theme for every menu
+
+- Include the dark-and-gold theme without Modern UI. The optional mod improves fonts; no separate UI dependency is needed.
+- Give connection forms, marker and army editors, maps, rules, the guide, creative tools, recovery and results the same panels and action hierarchy.
+- Use themed native text fields, clear choice/stepper controls and drawn icons that also work with Minecraft's default font.
+- Replace mod confirmations with compact themed dialogs. Esc cancels; repeated clicks submit once. Keep normal Minecraft menus unchanged.
+- Return to the menu after closing a lobby; refresh locked actions when the server acknowledges the closure.
+- Check all menu controls at compact and wide sizes; preserve paths when switching connection views.
+
+## 0.2.0-beta.16 — buttons and menu navigation
+
+- Give the built-in menus a shared charcoal-and-gold theme: a clear primary action, quiet navigation, distinct destructive actions, selected tabs and switches.
+- Add visible keyboard focus and short hover/press feedback without moving controls. Cache fitted captions instead of measuring them every frame.
+- Open dropdowns at the current selection. Use Up/Down across pages, Enter to choose and Esc to return.
+- Give colour names more room. Avoid rebuilding menus when scrolling past an edge.
+- Keep empty choice lists valid on small screens. Clear a dismissed marker-save error from unrelated menus.
+
+## 0.2.0-beta.15 — first launch and usability
+
+- Use the compact roster without Modern UI too. Small screens show both player and AI; the add-AI action stays visible.
+- Separate Skirmish from Free play. Explain the map before launching from the guide; disable the dead-end Join action in an empty singleplayer world.
+- Pan cached map terrain immediately with bounded resampling. Stop sorting the marker list every render frame.
+- Save marker text with Back or Esc. Preserve edits made during an in-flight save; keep the editor open on server errors.
+- Reset an assigned start to Auto when its marker is deleted or reassigned. Expose AI colour in the start-marker editor.
+- Offer repair for incomplete game metadata and replace unavailable saved colours with Random.
+- Wrap long rule labels and show a scrollbar. Suppress background tooltips while a choice list is open.
+- Avoid repeated whole-army scans when refreshing remembered buildings under fog.
+
+## 0.2.0-beta.14 — input, menus and weapons
+
+- Move the building preview every Minecraft frame. Generals still validates final placement and rotation.
+- Block background controls under dropdowns, select starts on the map and clarify exit actions. Remember army choices for each connected game.
+- Put starting cash and the superweapon limit in the lobby, with host-only changes before launch. Show start outlines without hovering.
+- Rotate structure collision footprints; leave empty bounding-box corners walkable and buildable. Let players escape a structure built around them.
+- Stop treating Avenger designator durations as damage. Add host settings for microwave mob stuns and ECM deflection of mob-fired arrows.
+- Export the particle cannon's main damage pulses to Minecraft. Avoid duplicate block explosions from its residual trail; preserve original entity damage.
+- Allow superweapons to target loaded unexplored terrain. Strategic strikes retain terrain damage under the Ctrl and superweapons rule.
+- Add general promotion to creative tools. Mark hazardous terrain for avoidance with clearance for unit width.
+- Check native patches in memory, without copying the source checkout.
+- Prioritize changed terrain near armies and the camera instead of waiting for the background sweep.
+
 ## 0.2.0-beta.13 — Minecraft effects and local timing
 
 - Create original explosion and attached effects in Minecraft even outside RTS visibility; keep RTS fog rules.
@@ -17,7 +121,7 @@
 - Detonate original missiles against imported Minecraft walls. Preserve native splash damage.
 - Restore live music volume after F8 and map initialization.
 - Adapt original EMP pulses to mobs and redstone, with separate host settings for vehicles, mobs and circuits. Restore AI and circuits when the pulse expires.
-- Add an optional Modern UI lobby: a compact roster, in-place selectors, map preview and a clear match action. Keep vanilla widgets without Modern UI.
+- Add a Generals-style lobby layout when Modern UI is detected: a compact roster, in-place selectors, map preview and a clear match action. Keep vanilla widgets without Modern UI.
 
 ## 0.2.0-beta.11 — terrain and navigation
 

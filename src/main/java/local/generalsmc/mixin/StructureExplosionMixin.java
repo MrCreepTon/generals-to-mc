@@ -21,7 +21,7 @@ public abstract class StructureExplosionMixin {
     }
     @Redirect(method="hurtEntities",at=@At(value="INVOKE",target="Lnet/minecraft/world/entity/Entity;hurtServer(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z"))
     private boolean generalsmc$once(Entity entity,net.minecraft.server.level.ServerLevel level,net.minecraft.world.damagesource.DamageSource source,float amount){
-        if(entity instanceof NativeActorEntity actor&&actor.canBeCollidedWith())return false;
+        if(entity instanceof NativeActorEntity actor&&actor.structure())return false;
         return entity.hurtServer(level,source,amount);
     }
 }

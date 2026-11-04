@@ -12,7 +12,10 @@
     "StructureExplosionMixin",
     "SavedDataFolderAccessor",
     "EmpSignalMixin",
-    "EmpMobMixin"
+    "EmpMobMixin",
+    "TerrainChangesMixin",
+    "NativeArrowHitMixin",
+    "NativeStructureRayMixin"
   ],
   "injectors": {
     "defaultRequire": 1

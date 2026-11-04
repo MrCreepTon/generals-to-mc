@@ -2,17 +2,15 @@
 
 **English** · [Русский](KNOWN_ISSUES.ru.md)
 
-- Windows and Fabric only. Use the JAR matching your exact supported Minecraft version. Linux/Wine is not supported.
-- Minecraft 26.3 has a guard against a rare Windows JVM crash during native shader compilation. Guarded checks pass, but an unguarded control run also passed; the fix is not conclusive. Updating Java alone did not resolve the reproduced crash.
-- Your own Generals and Zero Hour are required. Generals without Zero Hour is not ported. Vanilla and installed ROTR have been tested, without covering every ROTR unit or ability. Contra has not been tested. Mods changing EXE/DLL code need separate support.
-- Some original modes, models, materials, shadows and abilities still differ or are missing.
-- RTS saves, campaigns/Challenge, replays and joining/rejoining ongoing matches are not supported.
-- Long routes through unknown chunks, large terrain regions, multilevel navigation and world boundaries need further work.
-- NPC-only spectators, village defence and capture/hold objectives are not implemented.
-- Two actual 26.3 clients passed eight minutes with an NPC and injected 0/100/300/0 ms RTT. A separate five-minute single-client shared simulation with an NPC passed. Earlier two-client checks cover 1.21.4. Remote dedicated servers, long WAN sessions, large armies and complete multiplayer checks on every profile remain unverified.
-- Fire and destruction rules apply to Generals weapons. Minecraft fires and explosions follow Minecraft gamerules.
-- Supply, oil and start markers persist with the world. A full building palette and natural oil generation are not available.
+- Clients and the server require Windows and Fabric. Linux/Wine is not supported. Use the JAR for your exact Minecraft version.
+- Bring your own Generals and Zero Hour. Generals without Zero Hour is not ported. Ordinary Zero Hour and installed Rise of the Reds have been tested; full ROTR unit coverage and Contra remain unverified. Mods that change EXE or DLL code need separate support.
+- RTS saves, campaigns, Challenge, replays, and joining an ongoing match are not supported. Markers, notes, and world rules persist, but armies do not survive closing Minecraft.
+- Long routes through unknown chunks, multilevel navigation, world boundaries, and large armies need more testing.
+- Minecraft 26.3 has a guard for an intermittent JVM crash during native shader compilation. Short guarded runs pass, but the fix is not conclusive. Report repeat crashes with the recovery logs.
+- Network tests cover controlled local clients, NPCs, injected latency, and recovery. Remote dedicated servers and long WAN matches remain unverified. A passing scenario does not establish every multiplayer case.
+- NPC-only spectator games, village defense, capture-and-hold objectives, a full building palette, and natural oil generation are not implemented.
+- Generals destruction and fire rules apply to Generals weapons. Minecraft explosions and fires follow Minecraft gamerules. Modded redstone may bypass the vanilla signal hooks used by EMP.
 
-Checks cover specific scenarios, not every possible failure. If the engine stops, use the recovery screen and logs at `%LOCALAPPDATA%/GeneralsMinecraft`.
+If the engine stops, use the recovery screen. Connections and logs are in `%LOCALAPPDATA%/GeneralsMinecraft`.
 
 [Installation](INSTALL.md) · [Changelog](../CHANGELOG.md) · [README](../README.md)

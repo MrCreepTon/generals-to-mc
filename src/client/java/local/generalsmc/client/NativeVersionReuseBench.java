@@ -7,6 +7,7 @@ import java.util.*;
 
 /** Bounded QA workspace; never backs up or touches a user's world or game installation. */
 final class NativeVersionReuseBench {
+    private static net.minecraft.client.gui.screens.Screen handledWorldPrompt;
     static Path root(Minecraft mc)throws Exception {
         Path root=Path.of(System.getProperty("generalsmc.testRoot",mc.gameDirectory.toPath().resolve("generals-test").toString())).toAbsolutePath().normalize();
         Files.createDirectories(root);
@@ -38,12 +39,17 @@ final class NativeVersionReuseBench {
     }
     static boolean openExisting(Minecraft mc,String name){
         if(!Files.isRegularFile(mc.gameDirectory.toPath().resolve("saves").resolve(name).resolve("level.dat")))return false;
+        handledWorldPrompt=null;
         var screen=NativeVersionScreenBench.current(mc);mc.createWorldOpenFlows().openWorld(name,()->NativeVersionScreenBench.show(mc,screen));return true;
     }
     static void advanceOwnedWorld(Minecraft mc,java.util.function.Consumer<String> click){
-        String action=NativeVersionScreenBench.current(mc) instanceof net.minecraft.client.gui.screens.BackupConfirmScreen?"selectWorld.backupJoinSkipButton":
-            NativeVersionScreenBench.current(mc) instanceof net.minecraft.client.gui.screens.worldselection.ConfirmExperimentalFeaturesScreen?"gui.proceed":null;
+        var current=NativeVersionScreenBench.current(mc);
+        if(current==handledWorldPrompt)return;
+        String action=current instanceof net.minecraft.client.gui.screens.BackupConfirmScreen?"selectWorld.backupJoinSkipButton":
+            current instanceof net.minecraft.client.gui.screens.worldselection.ConfirmExperimentalFeaturesScreen?"gui.proceed":null;
         if(action==null)return;
+        // Loading runs asynchronously; a second click can close the same save lock mid-load.
+        handledWorldPrompt=current;
         String label=net.minecraft.client.resources.language.I18n.get(action);
         click.accept(label);
     }

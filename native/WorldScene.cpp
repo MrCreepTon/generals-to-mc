@@ -2,6 +2,7 @@
 // Export original, posed WW3D geometry. Assets remain in the user's private session.
 #include "Precompiled/PreRTS.h"
 #include "WorldScene.h"
+#include "GameClient/Image.h"
 #include "Bridge.h"
 #include "GameClient/ParticleSys.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
@@ -132,6 +133,7 @@ unsigned int color(MeshModelClass* model,int vertex,int pass,float alpha,const V
     return byte(opacity)<<24|byte(diffuse.X)<<16|byte(diffuse.Y)<<8|byte(diffuse.Z);
 }
 
+float exportingOpacity=1;bool exportingPlacement=false;Coord3D placementAnchor={0,0,0};
 void mesh(std::ostream& out, MeshClass* object, unsigned int owner, const std::filesystem::path& root, unsigned int& batches, unsigned int& total,unsigned long long part,const Vector3* tint) {
     MeshModelClass* model = object->Peek_Model();
     int count = model->Get_Vertex_Count(), faces = model->Get_Polygon_Count();
@@ -157,19 +159,21 @@ void mesh(std::ostream& out, MeshClass* object, unsigned int owner, const std::f
         int end = face + 1;
         while (end < faces && model->Peek_Texture(end,pass,0)==texture&&model->Peek_Texture(end,pass,1)==model->Peek_Texture(face,pass,1)&&model->Get_Shader(end,pass)==model->Get_Shader(face,pass)) ++end;
         unsigned int id = textureId(texture, root), n = (end - face) * 3;
-        auto shader=model->Get_Shader(face,pass);auto mask=model->Peek_Texture(face,pass,1);
+        auto shader=model->Get_Shader(face,pass);
+        if(exportingOpacity<.999f&&shader.Get_Src_Blend_Func()==ShaderClass::SRCBLEND_ONE&&shader.Get_Dst_Blend_Func()==ShaderClass::DSTBLEND_ZERO){shader.Set_Src_Blend_Func(ShaderClass::SRCBLEND_SRC_ALPHA);shader.Set_Dst_Blend_Func(ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA);}
+        auto mask=model->Peek_Texture(face,pass,1);
         if(mask&&shader.Get_Post_Detail_Alpha_Func()!=ShaderClass::DETAILALPHA_DISABLE&&shader.Get_Post_Detail_Color_Func()==ShaderClass::DETAILCOLOR_DISABLE&&matchingTextureCoordinates(model,pass,count))
             id=maskedTextureId(texture,mask,shader.Get_Post_Detail_Alpha_Func(),root);
         if(total+n>300000)return;auto key=(part^static_cast<unsigned int>(face)^(static_cast<unsigned long long>(pass)<<48))*1099511628211ULL;
-        put(out, owner); put(out, id); put(out, n);put(out,key);unsigned int mode=materialMode(model->Get_Shader(face,pass),true);put(out,mode);
+        put(out, owner); put(out, id); put(out, n);put(out,key);unsigned int mode=materialMode(shader,true)|(shader.Get_Cull_Mode()==ShaderClass::CULL_MODE_ENABLE?0x80000u:0u)|(exportingPlacement?0x40000u:0u);put(out,mode);
         for (; face < end; ++face) for (int corner = 0; corner < 3; ++corner) {
             int v = triangles[face][corner];
-            put(out, vertices[v].X); put(out, vertices[v].Y); put(out, vertices[v].Z);
+            put(out, vertices[v].X-(exportingPlacement?placementAnchor.x:0)); put(out, vertices[v].Y-(exportingPlacement?placementAnchor.y:0)); put(out, vertices[v].Z-(exportingPlacement?placementAnchor.z:0));
             put(out, normals[v].X); put(out, normals[v].Y); put(out, normals[v].Z);
             float u = uv ? uv[v].X : 0, t = uv ? uv[v].Y : 0; if(!std::isfinite(u)){u=0;++repairedUV;}if(!std::isfinite(t)){t=0;++repairedUV;}auto material=model->Peek_Material(v,pass);auto mapper=material?material->Peek_Mapper(0):nullptr;
             if(mapper&&!mapper->Needs_Normals()){auto found=uvMatrices.find(mapper);if(found==uvMatrices.end()){Matrix4x4 matrix;mapper->Calculate_Texture_Matrix(matrix);found=uvMatrices.emplace(mapper,matrix).first;}auto& m=found->second;float mappedU=m[0].X*u+m[0].Y*t+m[0].Z,mappedV=m[1].X*u+m[1].Y*t+m[1].Z;if(std::isfinite(mappedU)&&std::isfinite(mappedV)){u=mappedU;t=mappedV;}}
             put(out, u); put(out, t);
-            unsigned int c = color(model,v,pass,object->Get_Alpha_Override(),tint); put(out, c);
+            unsigned int c = color(model,v,pass,exportingOpacity,tint); put(out, c);
         }
         ++batches;total+=n;
     }}
@@ -230,13 +234,15 @@ void decal(void* data,TextureClass* texture,const Matrix3D& transform,float sx,f
     auto uAxis=transform.Get_X_Vector();uAxis.Z=0;if(uAxis.Length2()<.0001f)uAxis.Set(1,0,0);uAxis.Normalize();Vector3 vAxis(uAxis.Y,-uAxis.X,0);
     const int triangles[]={0,1,2,0,2,3};
     for(int y=0;y<ny;++y)for(int x=0;x<nx;++x){float us[]={float(x)/nx,float(x+1)/nx,float(x+1)/nx,float(x)/nx},vs[]={float(y)/ny,float(y)/ny,float(y+1)/ny,float(y+1)/ny};Vector3 points[4];
-        for(int k=0;k<4;++k){points[k]=center+uAxis*((us[k]-.5f-ou)*sx)+vAxis*((vs[k]-.5f-ov)*sy);float height;if(!terrainHeight(points[k].X,points[k].Y,height))height=TheTerrainLogic->getGroundHeight(points[k].X,points[k].Y);points[k].Z=height+1;}
+        auto middle=center+uAxis*(((x+.5f)/nx-.5f-ou)*sx)+vAxis*(((y+.5f)/ny-.5f-ov)*sy);float height;if(!terrainHeight(middle.X,middle.Y,height))height=TheTerrainLogic->getGroundHeight(middle.X,middle.Y);
+        for(int k=0;k<4;++k){points[k]=center+uAxis*((us[k]-.5f-ou)*sx)+vAxis*((vs[k]-.5f-ov)*sy);points[k].Z=height+1;}
         for(int k:triangles)effectVertex(e.out,points[k],us[k],vs[k],c);
     }++e.batches;e.total+=n;++exportedDecals;
 }
 void particles(EffectExport& e){
     if(!TheParticleSystemManager||!worldTransportActive())return;
     Coord3D l,u;hostCameraBasis(l,u);Vector3 right(-l.x,-l.y,-l.z),up(u.x,u.y,u.z);
+    std::vector<float> groundHeights;
     for(auto sys:TheParticleSystemManager->getAllParticleSystems()){
         if(!sys||sys->isUsingDrawables()||sys->isUsingSmudge())continue;
         TextureClass* texture=nullptr;unsigned int id=0;
@@ -244,16 +250,26 @@ void particles(EffectExport& e){
             auto pos=p->getPosition();float size=p->getSize();
             if(!visibleEffect(pos->x,pos->y,pos->z)||p->isInvisible()||!std::isfinite(size)||size<=0||e.total+6>300000)continue;
             if(!texture){texture=W3DDisplay::m_assetManager->Get_Texture(sys->getParticleTypeName().str());id=textureId(texture,e.root);}
-            unsigned int owner=0xe0000000,n=6,mode=alphaMode(false);
+            bool ground=sys->getParticleAlignment()==ParticleSystemInfo::PARTICLE_ALIGNMENT_XYPLANAR;
+            int cells=ground?std::clamp((int)std::ceil(size/worldUnitsPerBlock()),1,64):1;
+            unsigned int owner=0xe0000000,mode=alphaMode(false);
             switch(sys->getShaderType()){case ParticleSystemInfo::ADDITIVE:mode=materialMode(ShaderClass::_PresetAdditiveSpriteShader,false);break;case ParticleSystemInfo::MULTIPLY:mode=materialMode(ShaderClass::_PresetMultiplicativeSpriteShader,false);break;case ParticleSystemInfo::ALPHA_TEST:mode=materialMode(ShaderClass::_PresetATestSpriteShader,false);break;default:break;}
             auto key=0xe000000000000000ULL^(static_cast<unsigned long long>(sys->getSystemID())<<32)^static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(p));
-            put(e.out,owner);put(e.out,id);put(e.out,n);put(e.out,key);put(e.out,mode);
             auto color=p->getColor();auto c=rgba(color->red,color->green,color->blue,p->getAlpha());
             Vector3 a=right,b=up;if(sys->getParticleAlignment()==ParticleSystemInfo::PARTICLE_ALIGNMENT_XYPLANAR){a.Set(1,0,0);b.Set(0,1,0);}
             float angle=std::floor(p->getAngle()*255/(2*3.14159265f))*(2*3.14159265f/256),co=std::cos(angle),si=std::sin(angle);Vector3 ax=a*co+b*si,ay=b*co-a*si,center(pos->x,pos->y,pos->z);
-            Vector3 v[]={center-ax*(size*.5f)+ay*(size*.5f),center-ax*(size*.5f)-ay*(size*.5f),center+ax*(size*.5f)-ay*(size*.5f),center+ax*(size*.5f)+ay*(size*.5f)};
-            const int order[]={0,1,2,0,2,3};float us[]={0,0,1,1},vs[]={0,1,1,0};for(int k:order)effectVertex(e.out,v[k],us[k],vs[k],c);
-            ++e.batches;e.total+=6;++exportedParticles;if(testSystems.count(sys->getSystemID()))++testFXParticles;
+            // Flat ground keeps the original single quad; only steps need extra geometry.
+            bool flat=true;float firstHeight=0;
+            if(ground){groundHeights.resize(cells*cells);for(int y=0;y<cells;++y)for(int x=0;x<cells;++x){auto middle=center+ax*((x+.5f)/cells-.5f)*size+ay*(.5f-(y+.5f)/cells)*size;float h;if(!terrainHeight(middle.X,middle.Y,h))h=TheTerrainLogic->getGroundHeight(middle.X,middle.Y);groundHeights[y*cells+x]=h;if(x==0&&y==0)firstHeight=h;else if(std::fabs(h-firstHeight)>.001f)flat=false;}}
+            int emittedCells=flat?1:cells;unsigned int n=6*emittedCells*emittedCells;if(e.total+n>300000)continue;
+            put(e.out,owner);put(e.out,id);put(e.out,n);put(e.out,key);put(e.out,mode);
+            const int order[]={0,1,2,0,2,3};
+            for(int y=0;y<emittedCells;++y)for(int x=0;x<emittedCells;++x){float us[]={float(x)/emittedCells,float(x)/emittedCells,float(x+1)/emittedCells,float(x+1)/emittedCells},vs[]={float(y)/emittedCells,float(y+1)/emittedCells,float(y+1)/emittedCells,float(y)/emittedCells};Vector3 points[4];
+                float height=flat?firstHeight:groundHeights[y*cells+x];
+                for(int k=0;k<4;++k){points[k]=center+ax*((us[k]-.5f)*size)+ay*((.5f-vs[k])*size);if(ground)points[k].Z=height+1;}
+                for(int k:order)effectVertex(e.out,points[k],us[k],vs[k],c);
+            }
+            ++e.batches;e.total+=n;++exportedParticles;if(testSystems.count(sys->getSystemID()))++testFXParticles;
         }if(texture)texture->Release_Ref();
     }
 }
@@ -262,11 +278,11 @@ void bib(void* data,TextureClass* texture,const Vector3* corners,unsigned int c,
     if((preview&&!worldInterfaceActive())||!visibleEffect(center.X,center.Y,center.Z))return;
     auto a=corners[1]-corners[0],b=corners[3]-corners[0];int nx=std::clamp((int)std::ceil(a.Length()/worldUnitsPerBlock()),1,128),ny=std::clamp((int)std::ceil(b.Length()/worldUnitsPerBlock()),1,128);unsigned int n=nx*ny*6;
     if(e.total+n>300000)return;
-    unsigned int owner=0xc0000000,id=textureId(texture,e.root),mode=alphaMode(true);auto key=0xc000000000000000ULL^static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(identity));
+    unsigned int owner=0xc0000000,id=textureId(texture,e.root),mode=alphaMode(true)|(preview?0x40000u:0u);auto key=0xc000000000000000ULL^static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(identity));
     put(e.out,owner);put(e.out,id);put(e.out,n);put(e.out,key);put(e.out,mode);
     const int order[]={0,1,2,0,2,3};
     for(int y=0;y<ny;++y)for(int x=0;x<nx;++x){float us[]={float(x)/nx,float(x+1)/nx,float(x+1)/nx,float(x)/nx},vs[]={float(y)/ny,float(y)/ny,float(y+1)/ny,float(y+1)/ny};Vector3 p[4];
-        for(int k=0;k<4;++k){p[k]=corners[0]*(1-us[k])*(1-vs[k])+corners[1]*us[k]*(1-vs[k])+corners[2]*us[k]*vs[k]+corners[3]*(1-us[k])*vs[k];float h;if(!terrainHeight(p[k].X,p[k].Y,h))h=TheTerrainLogic->getGroundHeight(p[k].X,p[k].Y);p[k].Z=h+1.1f;}
+        for(int k=0;k<4;++k){p[k]=corners[0]*(1-us[k])*(1-vs[k])+corners[1]*us[k]*(1-vs[k])+corners[2]*us[k]*vs[k]+corners[3]*(1-us[k])*vs[k];float h;if(!terrainHeight(p[k].X,p[k].Y,h))h=TheTerrainLogic->getGroundHeight(p[k].X,p[k].Y);p[k].Z=h+1.1f;if(preview)p[k]-=Vector3(placementAnchor.x,placementAnchor.y,placementAnchor.z);}
         for(int k:order)effectVertex(e.out,p[k],us[k],1-vs[k],c);
     }++e.batches;e.total+=n;
 }
@@ -288,11 +304,29 @@ void emitLaser(void* context,SegmentedLineClass* line){
         effectVertex(e.out,a-edge,u,v0,color);effectVertex(e.out,a+edge,1+u,v0,color);effectVertex(e.out,b+edge,1+u,v1,color);effectVertex(e.out,a-edge,u,v0,color);effectVertex(e.out,b+edge,1+u,v1,color);effectVertex(e.out,b-edge,u,v1,color);++e.batches;e.total+=6;++exportedLasers;
     }
 }
-void sceneState(std::ostream& out){out<<",\"exportedParticles\":"<<exportedParticles<<",\"exportedDecals\":"<<exportedDecals<<",\"repairedUV\":"<<repairedUV<<",\"testFXParticles\":"<<testFXParticles<<",\"exportedLasers\":"<<exportedLasers;}
+void sceneState(std::ostream& out){if(std::getenv("ZHMC_TEST")){out<<",\"useFX\":"<<(TheGlobalData->m_useFX?"true":"false")<<",\"particleSystems\":[";bool comma=false;for(auto sys:TheParticleSystemManager->getAllParticleSystems())if(sys){if(comma)out<<',';comma=true;out<<"{\"id\":"<<sys->getSystemID()<<",\"name\":\""<<sys->getParticleTypeName().str()<<"\",\"count\":"<<sys->getParticleCount()<<",\"destroyed\":"<<sys->isDestroyed()<<"}";}out<<"]";}out<<",\"placementX\":"<<placementAnchor.x<<",\"placementY\":"<<placementAnchor.y<<",\"placementZ\":"<<placementAnchor.z<<",\"exportedParticles\":"<<exportedParticles<<",\"exportedDecals\":"<<exportedDecals<<",\"repairedUV\":"<<repairedUV<<",\"testFXParticles\":"<<testFXParticles<<",\"exportedLasers\":"<<exportedLasers;}
 void beginTestFX(){priorSystems.clear();testSystems.clear();for(auto s:TheParticleSystemManager->getAllParticleSystems())if(s)priorSystems.insert(s->getSystemID());}
 void endTestFX(){for(auto s:TheParticleSystemManager->getAllParticleSystems())if(s&&!priorSystems.count(s->getSystemID()))testSystems.insert(s->getSystemID());priorSystems.clear();}
 void setSceneRegion(float x, float y, float r) { if(radius<=0 && r>0)worldStarted=timeGetTime();centerX = x; centerY = y; radius = r; }
 void rememberModel(const void* module,RenderObjClass* model){if(model){auto found=models.find(module);if(found==models.end()||found->second.model!=model)models[module]={model,++modelGeneration};}else models.erase(module);}
+unsigned int overheadFontTexture(TextureClass* texture){const char* root=std::getenv("ZHMC_BRIDGE_DIR");return root&&texture?textureId(texture,std::filesystem::path(root)):0;}
+unsigned int overheadTexture(const Image* image){
+    const char* path=std::getenv("ZHMC_BRIDGE_DIR");if(!path||!image)return 0;
+    bool raw=BitIsSet(image->getStatus(),IMAGE_STATUS_RAW_TEXTURE);
+    auto tex=raw?(TextureClass*)image->getRawTextureData():WW3DAssetManager::Get_Instance()->Get_Texture(image->getFilename().str(),MIP_LEVELS_1);
+    unsigned int id=textureId(tex,std::filesystem::path(path));if(tex&&!raw)tex->Release_Ref();return id;
+}
+bool hostParticleSteps(bool updated) {
+    if(!worldTransportActive())return updated;
+    static unsigned int consumed=~0u;
+    const auto frame=TheGameLogic->getFrame();
+    if(consumed==frame)return false;
+    unsigned int steps=consumed==~0u||frame<consumed?1:frame-consumed;
+    consumed=frame;
+    // The caller consumes the final step after setting the observed player index.
+    for(unsigned int i=1;i<std::min(steps,4u);++i)TheParticleSystemManager->update();
+    return true;
+}
 bool worldTransportActive() { return radius > 0; }
 bool sceneEnabled() { return radius > 0; }
 bool worldInterfaceActive() { return radius > 0 && worldViewMode; }
@@ -306,30 +340,38 @@ void captureScene() {
     lastFrame=TheGameLogic->getFrame();
     last = timeGetTime(); std::filesystem::path root(path);
     uvMatrices.clear();
-    unsigned int magic = 0x354d485a, frame = TheGameLogic->getFrame(), batches = 0, total = 0;
+    unsigned int magic = 0x364d485a, frame = TheGameLogic->getFrame(), batches = 0, total = 0;
     std::ostringstream out(std::ios::out | std::ios::binary); put(out, magic); put(out, frame); put(out, batches);
+    std::vector<std::pair<unsigned int,Coord3D>> anchors;
     exportedLasers=0;EffectExport effects{out,root,batches,total};
     for (Drawable* draw = TheGameClient->firstDrawable(); draw; draw=draw->getNextDrawable()) {
         auto object=draw->getObject();
         if(object&&isExternalObject(object->getID()))continue;
         bool laser=false;for(auto module=draw->getDrawModules();*module;++module)if((*module)->getLaserDrawInterface())laser=true;
-        if(object&&!laser&&!object->isKindOf(KINDOF_SELECTABLE)&&!object->isKindOf(KINDOF_PROJECTILE)&&!object->isKindOf(KINDOF_HULK))continue;
+        if(object&&!laser&&!object->getProjectileUpdateInterface()&&!object->isKindOf(KINDOF_SELECTABLE)&&!object->isKindOf(KINDOF_PROJECTILE)&&!object->isKindOf(KINDOF_HULK)&&!object->isKindOf(KINDOF_AIRCRAFT)&&!object->isKindOf(KINDOF_CLEANUP_HAZARD)&&!object->isKindOf(KINDOF_MINE)&&!object->isKindOf(KINDOF_DEMOTRAP)&&!object->isKindOf(KINDOF_BOOBY_TRAP)&&!object->isKindOf(KINDOF_CRATE))continue;
         auto p = draw->getPosition();
-        if (std::hypot(p->x - centerX, p->y - centerY) > radius) continue;
+        // Keep models crossing the edge of the streamed area, including rotated buildings.
+        float extent=object?object->getGeometryInfo().getBoundingCircleRadius():0;
+        if (std::hypot(p->x - centerX, p->y - centerY) > radius+extent) continue;
         const bool resource=object&&(object->isKindOf(KINDOF_SUPPLY_SOURCE)||object->getTemplate()->getName()=="TechOilDerrick");
+        const bool owned=object&&object->getControllingPlayer()==ThePlayerList->getLocalPlayer();
         if(resource)draw->setFullyObscuredByShroud(false);
-        if((draw->getFullyObscuredByShroud()&&!resource&&worldInterfaceActive())||(TheInGameUI->hostIsPlacementDrawable(draw)&&!worldInterfaceActive()))continue;
+        if((draw->getFullyObscuredByShroud()&&!resource&&!owned&&worldInterfaceActive())||(TheInGameUI->hostIsPlacementDrawable(draw)&&!worldInterfaceActive()))continue;
         // Shroud controls the RTS commander, never first-person Minecraft rendering.
-        struct HostVisibilityScope {Drawable* draw;bool restore;~HostVisibilityScope(){if(restore)draw->setFullyObscuredByShroud(true);}} visibility{draw,!worldInterfaceActive()&&draw->getFullyObscuredByShroud()};
+        struct HostVisibilityScope {Drawable* draw;bool restore;~HostVisibilityScope(){if(restore)draw->setFullyObscuredByShroud(true);}} visibility{draw,(!worldInterfaceActive()||owned)&&draw->getFullyObscuredByShroud()};
         if(visibility.restore)draw->setFullyObscuredByShroud(false);
         draw->draw(); // Preserve original model-state transitions and draw-module animation control.
-        unsigned int id=object&&object->isKindOf(KINDOF_SELECTABLE)?object->getID():0x80000000u+draw->getID();
+        unsigned int id=object&&(object->isKindOf(KINDOF_SELECTABLE)||object->isKindOf(KINDOF_AIRCRAFT))?object->getID():0x80000000u+draw->getID();
+        if(object&&id<0x80000000u)anchors.emplace_back(id,*object->getPosition());
+        exportingOpacity=draw->getEffectiveOpacity();
         Vector3 tint(0,0,0);if(auto c=draw->getTintColor())tint+=*c;if(auto c=draw->getSelectionColor())tint+=*c;
+        exportingPlacement=TheInGameUI->hostIsPlacementDrawable(draw);if(exportingPlacement)placementAnchor=*draw->getPosition();
         for (DrawModule** module = draw->getDrawModules(); *module; ++module) {
             if((*module)->getLaserDrawInterface())static_cast<W3DLaserDraw*>(*module)->hostLines(&effects,emitLaser);
             auto model=models.find(*module);if(model!=models.end())walk(out,model->second.model,id,root,batches,total,model->second.generation,0,&tint);
         }
     }
+    exportingOpacity=1;exportingPlacement=false;
     if(worldInterfaceActive()){
         auto ui=static_cast<W3DInGameUI*>(TheInGameUI);
         for(int i=0;i<ui->hostFeedbackCount();++i){auto model=ui->hostFeedback(i);if(model&&model->Peek_Scene())walk(out,model,0xf0000000u+i,root,batches,total,0xf0000000u+i);}
@@ -339,6 +381,7 @@ void captureScene() {
     if(TheW3DProjectedShadowManager)TheW3DProjectedShadowManager->hostDecals(decal,&effects);
     if(TheTerrainRenderObject&&TheTerrainRenderObject->hostBibBuffer())TheTerrainRenderObject->hostBibBuffer()->hostBibs(bib,&effects);
     particles(effects);
+    unsigned int anchorCount=anchors.size();put(out,anchorCount);for(auto& anchor:anchors){put(out,anchor.first);put(out,anchor.second.x);put(out,anchor.second.y);put(out,anchor.second.z);}
     out.seekp(8); put(out, batches);
     auto bytes = out.str(); auto temp = root / "scene.tmp";
     { std::ofstream file(temp, std::ios::binary | std::ios::trunc); file.write(bytes.data(), bytes.size()); }

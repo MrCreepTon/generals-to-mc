@@ -1,14 +1,18 @@
 package local.generalsmc.mixin;
 import local.generalsmc.nativebridge.StructureCollisions;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.*;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.*;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.List;
-@Mixin(Entity.class)
-public abstract class StructureMovementMixin {
-    @Redirect(method="collide",at=@At(value="INVOKE",target="Lnet/minecraft/world/level/Level;getEntityCollisions(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/phys/AABB;)Ljava/util/List;"))
-    private List<VoxelShape> generalsStructureCollision(Level level,Entity mover,AABB area){return StructureCollisions.supplement(level,mover,area,level.getEntityCollisions(mover,area));}
+/** Precise footprints for movement, free-space queries and block placement. */
+@Mixin(EntityGetter.class)
+public interface StructureMovementMixin {
+    @Inject(method="getEntityCollisions",at=@At("RETURN"),cancellable=true)
+    private void generalsStructureCollision(Entity mover,AABB area,CallbackInfoReturnable<List<VoxelShape>> result){if((Object)this instanceof Level level)result.setReturnValue(StructureCollisions.supplement(level,mover,area,result.getReturnValue()));}
+    @Inject(method="isUnobstructed",at=@At("HEAD"),cancellable=true)
+    private void generalsStructurePlacement(Entity except,VoxelShape shape,CallbackInfoReturnable<Boolean> result){if((Object)this instanceof Level level&&StructureCollisions.blocksPlacement(level,except,shape))result.setReturnValue(false);}
 }

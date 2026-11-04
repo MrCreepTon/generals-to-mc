@@ -38,7 +38,7 @@ final class NativeEffectsBench {
         },mc.getSingleplayerServer());
     }
     static boolean tick(Minecraft mc,NativeWorldView view,List<String> checks)throws Exception{
-        age++;var screen=(NativeWorldScreen)mc.screen;
+        age++;var screen=(NativeWorldScreen)MenuScreens.active(mc.screen);
         if(age>1200)throw new IllegalStateException("Effects oracle timeout at case "+stage+"; goal="+goal);
         if(stage==0&&work.isDone()&&age>80){work.join();spawn(view,"ChinaAirfield",new Vec3(-18.5,64,-18.5));next(1);}
         else if(stage==1&&age>50){

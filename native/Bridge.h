@@ -29,6 +29,7 @@ Drawable* worldPointerDrawable();
 bool worldPointerPosition(Coord3D* position);
 bool worldPointerPosition(const ICoord2D* screen,Coord3D* position);
 bool hasHostView();
+bool hostPowerTarget(const Coord3D*);
 int hostWorldToScreen(const Coord3D* position,ICoord2D* screen);
 bool hostScreenToWorld(const ICoord2D* screen,Coord3D* position,float z);
 void hostAngle(float radians);
@@ -48,3 +49,4 @@ namespace zhmc {bool hostProjectileMoved(Object* object,const Coord3D* previous)
 namespace zhmc {bool hostEmpAffectsNative();void hostEMP(const Coord3D*,float,unsigned int,unsigned int);}
 
 namespace zhmc {bool hostBlockImpact();void hostAudioMeter(float volume);}
+namespace zhmc {bool hostDriverCanFire(const Object*);bool hostSupplyTarget(const Object*);}

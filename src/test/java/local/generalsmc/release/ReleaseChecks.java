@@ -11,6 +11,7 @@ public final class ReleaseChecks {
     private static void require(boolean ok,String detail){if(!ok)throw new AssertionError(detail);checks++;}
     private static void oldPreparationCheck(WorldRules.Values value){var rules=new WorldRules();rules.update(value);require(WorldRules.load(rules.save(new CompoundTag(),null)).values().equals(value),"Starting area preparation survives save/load");}
     public static void main(String[] args)throws Exception{
+        checks+=NativeFileQueueChecks.run();
         require(Files.isDirectory(Path.of(NativeProfiles.browseStart(""))),"Empty folder picker starts in an existing directory");
         require(Files.isDirectory(Path.of(NativeProfiles.browseStart("\0"))),"Invalid picker input falls back without a crash");
         var layout=Files.createTempDirectory("generals-folders-");try{

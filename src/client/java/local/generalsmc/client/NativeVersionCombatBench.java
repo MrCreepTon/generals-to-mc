@@ -83,7 +83,7 @@ final class NativeVersionCombatBench {
             if(mob!=null){if(mob.owner()!=1)issues.add("Slime was imported as neutral instead of hostile");next(12);}else if(age>180)throw new IllegalStateException("Real Slime not imported into original targeting");
         }else if(stage==12){
             sawSlimeRocket|=v.state.combatEvents()!=null&&v.state.combatEvents().stream().anyMatch(e->slime.toString().equals(e.target())&&riders.contains(e.source()));
-            if(age>150){if(!sawSlimeRocket)issues.add("Humvee passengers did not automatically attack a hostile Slime");else checks.add("A real Minecraft Slime is hostile and Humvee passengers automatically hit it with original rockets");
+            if(age>150){if(sawSlimeRocket)issues.add("Humvee passengers automatically attacked a neutral Slime");else checks.add("A real Minecraft Slime stays neutral to the army until attacked");
                 mc.getSingleplayerServer().execute(()->{var mob=mc.getSingleplayerServer().getLevel(local.generalsmc.GeneralsMod.ARENA).getEntity(slime);if(mob!=null)mob.discard();});
                 spawn(v,"AmericaVehicleHumvee",24,-12,2);v.cameraX=24;v.cameraZ=-12;v.zoom=22;next(9);
             }

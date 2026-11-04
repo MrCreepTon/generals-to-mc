@@ -1,33 +1,28 @@
 package local.generalsmc.client;
-
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Tooltip;
-
-/** Table control, with native focus, narration and keyboard activation. */
+/** Compact fields and lightweight menu rows share the same control states. */
 final class LobbyCell extends MenuButton {
-    final boolean dropdown,primary;final int chip;
-    private float hover;private final OnPress activate;
-    LobbyCell(String text,int x,int y,int w,int h,boolean dropdown,int chip,boolean primary,OnPress action){
-        super(x,y,w,h,L.component(text),action,DEFAULT_NARRATION);this.dropdown=dropdown;this.chip=chip;this.primary=primary;this.activate=action;
-        setTooltip(Tooltip.create(L.component(text)));
-    }
-    void activate(){activate.onPress(this);}
-    @Override protected void renderContents(GuiGraphics g,int mx,int my,float delta){
-        boolean focused=active&&isHoveredOrFocused();hover+=( (focused?1:0)-hover)*.3f;
-        int x=getX(),y=getY(),w=getWidth(),h=getHeight();
-        int edge=focused?0xff76e9ff:primary?0xff41bcd9:0xff244653;
-        int fill=primary?0xff123e4f:focused?0xff193744:0xf010202b;
-        g.fill(x+2,y,x+w-2,y+h,edge);g.fill(x,y+2,x+w,y+h-2,edge);
-        g.fill(x+1,y+2,x+w-1,y+h-2,fill);g.fill(x+2,y+1,x+w-2,y+h-1,fill);
-        if(primary)g.fill(x+3,y+h-3,x+w-3,y+h-2,0xff3a8093);
-        if(hover>.01)g.fill(x+2,y+h-2,x+w-2,y+h-1,((int)(hover*180)<<24)|0x75dcf5);
-        var font=Minecraft.getInstance().font;int inset=7;
-        if(chip!=-1){g.fill(x+6,y+h/2-4,x+14,y+h/2+4,chip);inset=19;}
-        String text=getMessage().getString();int available=w-inset-(dropdown?15:6);
-        if(font.width(text)>available)text=font.plainSubstrByWidth(text,Math.max(0,available-font.width("…")))+"…";
-        int tx=primary?x+(w-font.width(text))/2:x+inset;
-        g.drawString(font,text,tx,y+(h-font.lineHeight)/2,active?0xffe8f3f7:0xffa3b4bf,false);
-        if(dropdown&&active){int ax=x+w-10,ay=y+h/2;g.fill(ax-2,ay-1,ax+3,ay,0xff7ecce1);g.fill(ax-1,ay,ax+2,ay+1,0xff7ecce1);g.fill(ax,ay+1,ax+1,ay+2,0xff7ecce1);}
-    }
+ final boolean dropdown,primary;final int chip;Tooltip currentTooltip;boolean option,popover;
+ private final OnPress activate;
+ LobbyCell(String text,int x,int y,int w,int h,boolean dropdown,int chip,boolean primary,OnPress action){super(x,y,w,h,L.component(text),action,DEFAULT_NARRATION);this.dropdown=dropdown;this.chip=chip;this.primary=primary;this.activate=action;kind=primary?Kind.PRIMARY:Kind.FIELD;setTooltip(Tooltip.create(L.component(text)));}
+ LobbyCell action(){if(!primary)kind=Kind.SECONDARY;return this;}
+ LobbyCell option(boolean selected){option=true;this.selected=selected;return this;}
+ LobbyCell popover(){popover=true;active=false;setTooltip(null);return this;}
+ @Override public void setTooltip(Tooltip value){super.setTooltip(value);currentTooltip=value;}
+ void activate(){if(active){pressFeedback();activate.onPress(this);}}
+ @Override protected void renderContents(GuiGraphics g,int mx,int my,float delta){
+  int x=getX(),y=getY(),w=getWidth(),h=getHeight();
+  if(popover){UiPaint.panel(g,x,y,w,h);return;}
+  boolean focus=active&&isFocused();float amount=hover(active&&isHovered());int ink=UiPaint.TEXT;
+  if(option){if(selected||focus||amount>.01f)UiPaint.rounded(g,x+2,y+1,w-4,h-2,focus?0xff3b5060:selected?0xff253d4d:UiPaint.mix(0x00263848,0xff2a3d4e,amount));if(focus){g.fill(x+2,y+4,x+4,y+h-4,UiPaint.FOCUS);} }
+  else ink=UiPaint.button(g,x,y,w,h,kind,active,selected,focus,amount,pressed());
+  var font=Minecraft.getInstance().font;int inset=9;
+  if(chip!=-1){UiPaint.rounded(g,x+8,y+h/2-5,10,10,0xffd1dce2);UiPaint.rounded(g,x+9,y+h/2-4,8,8,chip);inset=24;}
+  String text=fitted(font,w-inset-(dropdown||option?18:8));if(option&&captionClipped!=(currentTooltip!=null))setTooltip(captionClipped?Tooltip.create(getMessage()):null);int tx=primary?x+(w-fittedWidth)/2:x+inset;
+  g.drawString(font,text,tx,y+(h-font.lineHeight)/2+(pressed()&&active?1:0),ink,false);
+  if(dropdown&&active)UiPaint.arrow(g,x+w-12,y+h/2,UiPaint.MUTED);
+  if(option&&selected)UiPaint.check(g,x+w-17,y+h/2-4,UiPaint.ACCENT);
+ }
 }

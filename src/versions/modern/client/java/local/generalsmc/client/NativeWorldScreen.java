@@ -50,9 +50,9 @@ public final class NativeWorldScreen extends NativeFrameScreen {
     void clickCommand(String command,boolean down){var v=NativeWorldView.current;var c=v.state.controls().stream().filter(w->command.equals(w.command())).findFirst().orElseThrow();double x=(c.x()+c.width()/2.0)*width/input.width,y=(c.y()+c.height()/2.0)*height/input.height;mouseMoved(x,y);if(down)mouseClicked(x,y,0);else mouseReleased(x,y,0);}
     @Override public void render(GuiGraphics g,int x,int y,float partialTick) {
         NativeNetworkClient.pumpOrders();
-        renderPartialTick=partialTick;
+        renderPartialTick=partialTick;previewPointer(x,y);
         gui.update();cursor.update();
-        drawHealthBars(g);
+        drawHealthBars(g);drawOverhead(g);
         gui.draw(g,0,0,width,height);drawMobPortrait(g);
         if(GeneralsClient.noticeTicks>0){int w=Math.min(width-20,font.width(GeneralsClient.notice)+16);g.fill((width-w)/2,28,(width+w)/2,49,0xdd20242a);g.drawCenteredString(font,GeneralsClient.notice,width/2,34,0xffffdd99);}
         var view=NativeWorldView.current;
@@ -63,11 +63,17 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(cursor.available()){GLFW.glfwSetInputMode(minecraft.getWindow().handle(),GLFW.GLFW_CURSOR,GLFW.GLFW_CURSOR_HIDDEN);cursor.drawCursor(g,x,y);}
     }
     private void drawMobPortrait(GuiGraphics g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.portrait()==null||view.state.selected()==null||view.state.selected().size()!=1)return;int selected=view.state.selected().get(0);var actor=view.state.objects().stream().filter(o->o.id()==selected&&o.externalKey()!=null&&!o.externalKey().isEmpty()).findFirst().orElse(null);if(actor==null)return;var entity=java.util.stream.StreamSupport.stream(minecraft.level.entitiesForRendering().spliterator(),false).filter(e->actor.externalKey().equals(e.getUUID().toString())).findFirst().orElse(null);if(!(entity instanceof net.minecraft.world.entity.LivingEntity living))return;var box=view.state.portrait();int left=box.x()*width/input.width,top=box.y()*height/input.height,right=(box.x()+box.width())*width/input.width,bottom=(box.y()+box.height()-36)*height/input.height;float previewHeight=living.getBbHeight();int size=Math.max(1,(int)((bottom-top)/(previewHeight*1.25)));net.minecraft.client.gui.screens.inventory.InventoryScreen.renderEntityInInventoryFollowsMouse(g,left,top,right,bottom,size,(previewHeight-living.getBbHeight())*.5f,(left+right)/2f,(top+bottom)/2f,living);}
+    private void drawOverhead(GuiGraphics g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.overheadImages()==null)return;
+        float sx=(float)width/input.width,sy=(float)height/input.height;g.pose().pushMatrix();g.pose().scale(sx,sy);
+        for(var b:view.state.overheadImages()){var actor=view.actor(b.id());if(actor==null||actor.health()<=0||b.tw()<=0||b.th()<=0)continue;var location=view.origin.world(actor.x(),actor.y(),actor.z());if(actor.owner()!=view.state.localPlayerIndex()&&!NativeFog.visible(location.x,location.z))continue;var point=project(view.overheadAnchor(b.id(),b.x(),b.y(),b.z(),b.relative()));var vertical=b.relative()?project(view.overheadAnchor(b.id(),b.yx(),b.yy(),b.yz(),true)):point;
+            try{g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,view.texture(b.texture()),(int)Math.round(point[0]/sx+b.dx()),(int)Math.round(vertical[1]/sy+b.dy()),b.u()*b.tw(),b.v()*b.th(),Math.max(1,(int)Math.round(b.width())),Math.max(1,(int)Math.round(b.height())),Math.max(1,Math.round(b.uw()*b.tw())),Math.max(1,Math.round(b.vh()*b.th())),b.tw(),b.th(),(int)b.color());}catch(IOException ignored){}
+        }g.pose().popMatrix();
+    }
     private void drawHealthBars(GuiGraphics g){var view=NativeWorldView.current;if(view==null||view.state==null||view.state.healthBars()==null)return;
         float sx=(float)width/input.width,sy=(float)height/input.height;
         // Preserve the source's three physical pixels; rounding in scaled GUI coordinates erased the interior.
         g.pose().pushMatrix();g.pose().scale(sx,sy);
-        for(var b:view.state.healthBars()){var actor=view.actor(b.id());if(actor==null||actor.health()<=0)continue;var location=view.origin.world(actor.x(),actor.y(),actor.z());if(actor.owner()!=view.state.localPlayerIndex()&&!NativeFog.visible(location.x,location.z))continue;var p=project(view.origin.world(b.x(),b.y(),b.z()));
+        for(var b:view.state.healthBars()){var actor=view.actor(b.id());if(actor==null||actor.health()<=0)continue;var location=view.origin.world(actor.x(),actor.y(),actor.z());if(actor.owner()!=view.state.localPlayerIndex()&&!NativeFog.visible(location.x,location.z))continue;var p=project(view.overheadAnchor(b.id(),b.x(),b.y(),b.z(),b.relative()));
             int x=(int)Math.round(p[0]/sx+b.dx()),y=(int)Math.round(p[1]/sy+b.dy()),w=Math.max(3,(int)Math.round(b.width())),h=Math.max(3,(int)Math.round(b.height()));int outline=(int)b.outline(),color=(int)b.color();
             g.fill(x,y,x+w,y+1,outline);g.fill(x,y+h-1,x+w,y+h,outline);g.fill(x,y,x+1,y+h,outline);g.fill(x+w-1,y,x+w,y+h,outline);
             int fill=healthFill(w,b.ratio());if(fill>0)g.fill(x+1,y+1,x+1+fill,y+h-1,color);
@@ -95,8 +101,9 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(picked!=0){var box=view.bounds(picked);if(box!=null){var point=box.clip(eye,end);if(point.isPresent())nearest=Math.min(nearest,eye.distanceTo(point.get()));}}
         hoveredMob=null;for(var entity:minecraft.level.getEntities(minecraft.player,new AABB(eye,end).inflate(1),e->e instanceof net.minecraft.world.entity.LivingEntity&&e.isAlive()&&!(e instanceof net.minecraft.world.entity.player.Player)&&!(e instanceof local.generalsmc.nativebridge.NativeActorEntity))){
             if(!NativeFog.visible(entity.getX(),entity.getZ()))continue;var point=entity.getBoundingBox().move(entity.getPosition(renderPartialTick).subtract(entity.position())).inflate(.10).clip(eye,end);if(point.isPresent()&&eye.distanceTo(point.get())<nearest){int id=view.state.objects().stream().filter(o->entity.getUUID().toString().equals(o.externalKey())).mapToInt(NativeSession.Actor::id).findFirst().orElse(0);nearest=eye.distanceTo(point.get());picked=id;hoveredMob=entity;if(id==0)prioritizeMob(entity);}
-        }NativeSession.Actor actor=null;for(var candidate:view.state.objects())if(candidate.id()==picked){actor=candidate;break;}if(actor!=null&&actor.owner()!=view.state.localPlayerIndex()){var p=view.origin.world(actor.x(),actor.y(),actor.z());if(!NativeFog.visible(p.x,p.z))return 0;}return picked;
+        }NativeSession.Actor actor=null;for(var candidate:view.state.objects())if(candidate.id()==picked){actor=candidate;break;}if(actor!=null&&actor.owner()!=view.state.localPlayerIndex()&&!NativeFog.resource(actor)){var p=view.origin.world(actor.x(),actor.y(),actor.z());if(!NativeFog.visible(p.x,p.z))return 0;}return picked;
     }
+    private void previewPointer(double x,double y){var v=NativeWorldView.current;if(v==null||v.state==null||!v.state.pendingBuild()||v.state.placementAnchored()||nativeLeft)return;var point=hit(x,y);if(point.getType()!=HitResult.Type.MISS)v.placementTarget=point.getLocation();}
     private boolean worldMouse(int message,double x,double y,int buttons) {
         long handlingStarted=System.nanoTime();
         worldPointerX=x;worldPointerY=y;
@@ -112,12 +119,12 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         }
         var world=actor!=null&&point.getType()==HitResult.Type.MISS?view.origin.world(actor.x(),actor.y(),actor.z()):point.getLocation();
         double surface=local.generalsmc.nativebridge.WorldSurface.ground(minecraft.level,(int)Math.floor(world.x),(int)Math.floor(world.z));
-        if(Double.isFinite(surface))world=new Vec3(world.x,surface,world.z);
+        if(!pendingCommand()&&Double.isFinite(surface))world=new Vec3(world.x,surface,world.z);
         if(hoveredMob!=null)world=hoveredMob.getPosition(renderPartialTick);
         else if(point.getType()==HitResult.Type.BLOCK){
             var normal=new Vec3(point.getDirection().getStepX(),point.getDirection().getStepY(),point.getDirection().getStepZ());
             var inside=point.getLocation().subtract(normal.scale(.001));double top=local.generalsmc.nativebridge.WorldSurface.ground(minecraft.level,(int)Math.floor(inside.x),(int)Math.floor(inside.z));
-            if(view.state.forceAttack())world=point.getLocation(); // A targeted block keeps its actual impact height.
+            if(view.state.forceAttack()||pendingCommand())world=point.getLocation(); // A targeted block keeps its actual impact height.
             else if(Double.isFinite(top)){
                 world=new Vec3(inside.x,top,inside.z);
                 if(id==0&&!pendingCommand()&&normal.y==0&&!standable(world)){
@@ -131,10 +138,10 @@ public final class NativeWorldScreen extends NativeFrameScreen {
     }
     private boolean standable(Vec3 p){return minecraft.level.noCollision(new AABB(p.x-.3,p.y+.001,p.z-.3,p.x+.3,p.y+1.8,p.z+.3));}
     private boolean pendingCommand(){var v=NativeWorldView.current;return v!=null&&v.state!=null&&(v.state.pendingBuild()||(v.state.pendingCommand()!=null&&!v.state.pendingCommand().isEmpty()));}
-    @Override public void mouseMoved(double x,double y){if(GeneralsClient.blocksInput())return;if(middleDown||rightDown){worldMouse(0x200,x,y,middleDown?16:2);return;}if(inPanel(x,y))guiMouse(0x200,x,y,0);else if(System.currentTimeMillis()-lastWorldMotion>33){lastWorldMotion=System.currentTimeMillis();worldMouse(0x200,x,y,nativeLeft?1:0);}}
+    @Override public void mouseMoved(double x,double y){previewPointer(x,y);if(GeneralsClient.blocksInput())return;if(middleDown||rightDown){worldMouse(0x200,x,y,middleDown?16:2);return;}if(inPanel(x,y))guiMouse(0x200,x,y,0);else if(System.currentTimeMillis()-lastWorldMotion>33){lastWorldMotion=System.currentTimeMillis();worldMouse(0x200,x,y,nativeLeft?1:0);}}
     @Override public boolean mouseClicked(double x,double y,int button){
         if(GeneralsClient.blocksInput())return true;
-        if(GeneralsClient.nativeMenu.matchesMouse(new net.minecraft.client.input.MouseButtonEvent(0,0,new net.minecraft.client.input.MouseButtonInfo(button,0)))){NativeRtsController.toggle();minecraft.setScreen(new GeneralsSetupScreen(null));return true;}
+        if(GeneralsClient.nativeMenu.matchesMouse(new net.minecraft.client.input.MouseButtonEvent(0,0,new net.minecraft.client.input.MouseButtonInfo(button,0)))){NativeRtsController.menu();return true;}
         if(GeneralsClient.nativeToggle.matchesMouse(new net.minecraft.client.input.MouseButtonEvent(0,0,new net.minecraft.client.input.MouseButtonInfo(button,0)))){NativeRtsController.toggle();return true;}
         int scan=RtsBindings.mouseScan(button);if(scan>0){scanInput(scan,true);return true;}
         button=RtsBindings.button(button);
@@ -161,8 +168,8 @@ public final class NativeWorldScreen extends NativeFrameScreen {
         if(GeneralsClient.blocksInput())return true;
         if(guiButtons!=0)guiMouse(0x200,x,y,0);else if(middleDown)worldMouse(0x200,x,y,16);else if(rightDown){rightDragged|=Math.hypot(x-rightX,y-rightY)>4;worldMouse(0x200,x,y,2);}else if(nativeLeft)worldMouse(0x200,x,y,1);return true;
     }
-    @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){if(GeneralsClient.blocksInput())return true;if(inPanel(x,y))guiMouse(0x20a,x,y,(int)(vertical*120));else if(NativeWorldView.current!=null)NativeWorldView.current.zoom=Math.max(10,Math.min(60,NativeWorldView.current.zoom-vertical*2));return true;}
-    @Override public boolean keyPressed(int key,int scan,int mods){if(GeneralsClient.blocksInput())return true;if(GeneralsClient.nativeMenu!=null&&GeneralsClient.nativeMenu.matches(new net.minecraft.client.input.KeyEvent(key,scan,mods))){NativeRtsController.toggle();minecraft.setScreen(new GeneralsSetupScreen(null));return true;}if(GeneralsClient.nativeToggle!=null&&GeneralsClient.nativeToggle.matches(new net.minecraft.client.input.KeyEvent(key,scan,mods))){NativeRtsController.toggle();return true;}if(key==GLFW.GLFW_KEY_F10&&(mods&GLFW.GLFW_MOD_CONTROL)!=0){NativeRtsController.stop();return true;}return super.keyPressed(key,scan,mods);}
+    @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical){if(GeneralsClient.blocksInput())return true;if(inPanel(x,y))guiMouse(0x20a,x,y,(int)(vertical*120));else if(NativeWorldView.current!=null)NativeWorldView.current.zoomBy(vertical);return true;}
+    @Override public boolean keyPressed(int key,int scan,int mods){if(GeneralsClient.blocksInput())return true;if(GeneralsClient.nativeMenu!=null&&GeneralsClient.nativeMenu.matches(new net.minecraft.client.input.KeyEvent(key,scan,mods))){NativeRtsController.menu();return true;}if(GeneralsClient.nativeToggle!=null&&GeneralsClient.nativeToggle.matches(new net.minecraft.client.input.KeyEvent(key,scan,mods))){NativeRtsController.toggle();return true;}if(key==GLFW.GLFW_KEY_F10&&(mods&GLFW.GLFW_MOD_CONTROL)!=0){NativeRtsController.stop();return true;}return super.keyPressed(key,scan,mods);}
     @Override public boolean keyReleased(int key,int scan,int mods){if(GeneralsClient.blocksInput())return true;return super.keyReleased(key,scan,mods);}
     int cursorType(){return cursor.cursorType();}
     long guiUploads(){return gui.uploads();}long guiAgeMillis(){return gui.ageMillis();}

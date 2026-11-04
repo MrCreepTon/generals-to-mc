@@ -1,5 +1,5 @@
 """Audit a release JAR: only one verifiable source-built EXE, no retail content or development fixtures."""
-import argparse,hashlib,json,struct,sys,zipfile
+import argparse,hashlib,io,json,struct,sys,zipfile
 from pathlib import Path
 
 def imports(data):
@@ -22,10 +22,17 @@ def imports(data):
         entry+=20
     return sorted(names)
 
+def clean_archives(archive,chain=''):
+    for name in archive.namelist():
+        assert not name.lower().endswith('.md'),f'Markdown must stay outside player JARs: {chain}{name}'
+        assert not name.startswith(('icyllis/','dev/icyllis/')),f'Optional Modern UI SDK must not be bundled: {chain}{name}'
+        if name.lower().endswith('.jar'):
+            with zipfile.ZipFile(io.BytesIO(archive.read(name))) as nested:clean_archives(nested,chain+name+'!/')
+
 p=argparse.ArgumentParser();p.add_argument('jar',type=Path);args=p.parse_args()
 binary='generalsmc/runtime/windows-x86/generalszh.exe'
 with zipfile.ZipFile(args.jar) as z:
-    names=z.namelist();assert not [n for n in names if n.lower().endswith('.md')],'Markdown must stay outside player JARs'
+    names=z.namelist();clean_archives(z)
     meta=json.loads(z.read('fabric.mod.json'))
     forbidden=[n for n in names if Path(n).suffix.lower() in {'.big','.w3d','.dds','.tga','.wav','.mp3','.bik','.dll','.exe'} and n!=binary]
     development=[n for n in names if ('Bench' in n and n.endswith('.class')) or '/sim/' in n or n.endswith(('/RtsScreen.class','/RtsWorldRenderer.class','/Messages.class'))]

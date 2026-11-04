@@ -9,6 +9,8 @@ import java.util.*;
 public final class NativeSession implements AutoCloseable {
     public final Path directory;
     private final Process process;
+    private final NativeFileQueue writes;
+    private final LinkedHashMap<Integer,String> acceptedFrames=new LinkedHashMap<>();
     private long sequence;
     private volatile State lastState;
     public enum Mode { LOCAL, PEER, AUTHORITY, SHARED_AUTHORITY }
@@ -26,7 +28,7 @@ public final class NativeSession implements AutoCloseable {
     private final Thread shutdown;
     private boolean closed;
     public final int width,height;
-    public record Actor(int id, String template, double x, double y, double z, int owner, double health, double maxHealth, double constructionPercent,double orientation,double weaponRange,String externalKey,double geometryMajor,double geometryMinor,double geometryHeight,double goalX,double goalY,double goalZ,boolean groundMovement,boolean cloaked,boolean structure,int moveRetries,int moveRetryFrame,boolean contained) {}
+    public record Actor(int id, String template, double x, double y, double z, int owner, double health, double maxHealth, double constructionPercent,double orientation,double weaponRange,String externalKey,double geometryMajor,double geometryMinor,double geometryHeight,double goalX,double goalY,double goalZ,boolean groundMovement,boolean cloaked,boolean structure,int moveRetries,int moveRetryFrame,boolean contained,boolean vehicle,boolean aircraft) {}
     public record Control(int id,int x,int y,int width,int height,String command,boolean enabled) {}
     public record ResourceTemplate(String name,float major,float minor,float height) {}
     public record Resource(String key,int id,int cash) {}
@@ -35,14 +37,15 @@ public final class NativeSession implements AutoCloseable {
         public CombatEvent(long seq,String target,int source,double amount,double x,double y,double z,double radius,int type,boolean explosive){this(seq,target,source,amount,x,y,z,radius,type,explosive,false,0);}
     }
     public record TeamColor(int id,String label,long color) {}
-    public record HealthBar(int id,double x,double y,double z,double dx,double dy,double width,double height,double ratio,long color,long outline) {}
+    public record OverheadImage(int id,int texture,double x,double y,double z,double dx,double dy,double width,double height,float u,float v,float uw,float vh,int tw,int th,long color,int mode,float yx,float yy,float yz,boolean relative) {}
+    public record HealthBar(int id,double x,double y,double z,double dx,double dy,double width,double height,double ratio,long color,long outline,boolean relative) {}
     public record SpecialPower(int object,String name,int readyFrame,boolean ready) {}
     public record ArmyStatus(int player,int rank,int experience,int buildings) {}
     public record State(String engine, long pid, int frame, boolean inGame, long consumed, String error,
                         long terrainRevision, int terrainColumns, List<String> factions, List<String> maps, List<Actor> objects, int localCash,
                         int localPlayerIndex, int terrainExtentX, int terrainExtentY,
                         List<Integer> selected, String pendingCommand, boolean pendingBuild, int stopMessages, String pointerCommand, String pendingBuildType,List<Control> controls,
-                        long radarRevision,float radarMinX,float radarMinY,float radarSpan,long cameraSerial,double cameraTargetX,double cameraTargetY,double scrollX,double scrollY,boolean scrolling,boolean forceAttack,int attackMessages,ResourceTemplate resourceTemplate,List<Resource> resources,int exportedParticles,int exportedDecals,int repairedUV,double placementAngle,boolean placementAnchored,int guiClockCount,int guiClockPercent,int testFXParticles,long rotationSerial,float cameraAngle,double healthUnitsPerPoint,List<CombatEvent> combatEvents,boolean pagedWorld,int pathPages,int partitionPages,List<HealthBar> healthBars,List<String> playableFactions,List<TeamColor> colors,int teamColor,long localPlayerColor,Control portrait,boolean hostAudioConfigured,boolean musicPlaying,double musicVolume,double soundVolume,double speechVolume,boolean audioEnabled,int audio2DSamples,int audio3DSamples,int audio2DUsed,int audio3DUsed,List<SpecialPower> specialPowers,List<Resource> sites,boolean lockstep,long lockstepCrc,long lockstepOutgoing,String lockstepError,int exportedLasers,int generalRank,int generalExperience,List<ArmyStatus> armyStatus,int lockstepCrcFrame,Map<String,String> factionNames,Map<String,Integer> startRadii,int engineUpdateMs,int guiCaptureMs,int publishMs) {}
+                        long radarRevision,float radarMinX,float radarMinY,float radarSpan,long cameraSerial,double cameraTargetX,double cameraTargetY,double scrollX,double scrollY,boolean scrolling,boolean forceAttack,int attackMessages,ResourceTemplate resourceTemplate,List<Resource> resources,int exportedParticles,int exportedDecals,int repairedUV,double placementAngle,boolean placementAnchored,int guiClockCount,int guiClockPercent,int testFXParticles,long rotationSerial,float cameraAngle,double healthUnitsPerPoint,List<CombatEvent> combatEvents,boolean pagedWorld,int pathPages,int partitionPages,List<HealthBar> healthBars,List<String> playableFactions,List<TeamColor> colors,int teamColor,long localPlayerColor,Control portrait,boolean hostAudioConfigured,boolean musicPlaying,double musicVolume,double soundVolume,double speechVolume,boolean audioEnabled,int audio2DSamples,int audio3DSamples,int audio2DUsed,int audio3DUsed,List<SpecialPower> specialPowers,List<Resource> sites,boolean lockstep,long lockstepCrc,long lockstepOutgoing,String lockstepError,int exportedLasers,int generalRank,int generalExperience,List<ArmyStatus> armyStatus,int lockstepCrcFrame,Map<String,String> factionNames,Map<String,Integer> startRadii,int engineUpdateMs,int guiCaptureMs,int publishMs,float placementX,float placementY,float placementZ,List<OverheadImage> overheadImages,List<OverheadImage> disabledIcons) {}
     private static final Gson JSON = new Gson();
     public NativeSession(Path root, boolean graphics) throws IOException {
         this(root,graphics,800,600);
@@ -90,21 +93,25 @@ public final class NativeSession implements AutoCloseable {
         if (graphics) builder.environment().put("ZHMC_CAPTURE", "1");
         builder.redirectErrorStream(true).redirectOutput(directory.resolve("process.log").toFile());
         process = builder.start();
+        writes = new NativeFileQueue();
         shutdown = new Thread(() -> { if (process.isAlive()) process.destroyForcibly(); }, "zhmc-owned-process-exit");
         Runtime.getRuntime().addShutdownHook(shutdown);
     }
     public synchronized long send(String command) throws IOException {
+        writes.check();
         if (!process.isAlive()) throw new IOException("Native engine exited " + process.exitValue());
         if (command.length() > 65536) throw new IOException("Native command exceeds transport limit");
         if((mode==Mode.AUTHORITY||mode==Mode.SHARED_AUTHORITY)&&!directAuthority&&worldCommand(command)){long token=++worldToken;queuedWorld.add(new WorldCommand(token,command));return 1000000000L+token;}
         long next = sequence + 1;
         Path temporary = directory.resolve("commands/" + next + ".tmp");
-        Files.writeString(temporary, command, StandardOpenOption.CREATE_NEW);
-        Files.move(temporary, directory.resolve("commands/" + next + ".cmd"), StandardCopyOption.ATOMIC_MOVE);
+        writes.submit(command.length()*2,()->{
+            Files.writeString(temporary, command, StandardOpenOption.CREATE_NEW);
+            Files.move(temporary, directory.resolve("commands/" + next + ".cmd"), StandardCopyOption.ATOMIC_MOVE);
+        });
         sequence = next;
         return next;
     }
-    private static boolean worldCommand(String command){String verb=command.split("\\s",2)[0];return Set.of("HOST_EMP_RULES","BEGIN_SHARED_AUTHORITY","INIT_WORLD","TERRAIN","TERRAIN2","TERRAIN3","HOST_BATCH","HOST_DAMAGE","MOB_SYNC","MOB_DROP","MOB_KILLED","COMBAT_ACK","RESOURCE","RESOURCE_REMOVE","SITE","SITE_REMOVE","REBASE_PLAYER","PLAYER_DEFEAT").contains(verb);}
+    private static boolean worldCommand(String command){String verb=command.split("\\s",2)[0];return Set.of("HOST_DRIVE","HOST_EMP_RULES","BEGIN_SHARED_AUTHORITY","INIT_WORLD","TERRAIN","TERRAIN2","TERRAIN3","HOST_BATCH","HOST_DAMAGE","MOB_SYNC","MOB_DROP","MOB_KILLED","COMBAT_ACK","RESOURCE","RESOURCE_REMOVE","SITE","SITE_REMOVE","REBASE_PLAYER","PLAYER_DEFEAT").contains(verb);}
     public synchronized String commitFrame(int frame,List<String> playerRecords)throws IOException{
         if(mode!=Mode.AUTHORITY&&mode!=Mode.SHARED_AUTHORITY)throw new IOException("Only the server can commit a native frame");
         var text=new StringBuilder("FRAME ").append(frame).append('\n');long token=0;
@@ -113,12 +120,19 @@ public final class NativeSession implements AutoCloseable {
         String value=text.toString();acceptFrame(frame,value);if(token>0)queuedAcks.add(new WorldAck(frame+1,token));return value;
     }
     public synchronized void acceptFrame(int frame,String value)throws IOException{
+        writes.check();
         if(mode==Mode.LOCAL||frame<0||!value.startsWith("FRAME "+frame+"\n")||value.length()>4*1024*1024)throw new IOException("Invalid native frame");
         if(frame<prunedFrames)return; // Already executed beyond the retained diagnostic window.
-        var destination=directory.resolve("frames/"+frame+".frame");if(Files.exists(destination)){if(!Files.readString(destination).equals(value))throw new IOException("Conflicting native frame");return;}
-        var temporary=destination.resolveSibling(frame+".tmp");Files.writeString(temporary,value);Files.move(temporary,destination,StandardCopyOption.ATOMIC_MOVE);
+        String previous=acceptedFrames.get(frame);if(previous!=null){if(!previous.equals(value))throw new IOException("Conflicting native frame");return;}
+        var destination=directory.resolve("frames/"+frame+".frame");
+        writes.submit(value.length()*2,()->{
+            if(Files.exists(destination)){if(!Files.readString(destination).equals(value))throw new IOException("Conflicting native frame");return;}
+            var temporary=destination.resolveSibling(frame+".tmp");Files.writeString(temporary,value);Files.move(temporary,destination,StandardCopyOption.ATOMIC_MOVE);
+        });
+        acceptedFrames.put(frame,value);while(acceptedFrames.size()>768)acceptedFrames.remove(acceptedFrames.keySet().iterator().next());
     }
     public synchronized List<String> drainOrders()throws IOException{
+        writes.check();
         if(mode!=Mode.PEER)return List.of();var lines=new ArrayList<String>();
         for(int budget=0;budget<64;budget++){var file=directory.resolve("outbox/"+(outgoing+1)+".msg");if(!Files.isRegularFile(file))break;String line=Files.readString(file).strip();if(line.length()>16000||line.indexOf('\n')>=0)throw new IOException("Invalid original command record");lines.add(line);outgoing++;}return List.copyOf(lines);
     }
@@ -132,6 +146,7 @@ public final class NativeSession implements AutoCloseable {
     private long recentCombatSequence;
     public synchronized List<CombatEvent> recentCombatEvents(){return List.copyOf(recentCombat);}
     public synchronized State read() throws IOException {
+        writes.check();
         if (!process.isAlive()) throw new IOException("Native engine exited " + process.exitValue());
         var file = directory.resolve("state.json");
         // Windows may briefly report the name missing while MoveFileEx replaces a complete snapshot.
@@ -177,11 +192,13 @@ public final class NativeSession implements AutoCloseable {
     public boolean awaitExit(long millis) throws InterruptedException {return process.waitFor(millis,java.util.concurrent.TimeUnit.MILLISECONDS);}
     @Override public synchronized void close() {
         if(closed)return;closed=true;
-        if (!process.isAlive()) { Runtime.getRuntime().removeShutdownHook(shutdown); return; }
+        if (!process.isAlive()) { writes.finish(); Runtime.getRuntime().removeShutdownHook(shutdown); return; }
         try { send("QUIT"); } catch (IOException ignored) {}
+        writes.finish();
         // Cleanup runs away from the Minecraft thread. No process name matching.
         Thread.ofVirtual().name("zhmc-native-shutdown").start(() -> {
             try {
+                writes.await(2000);
                 if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) process.destroy();
                 if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly();
                 Runtime.getRuntime().removeShutdownHook(shutdown);

@@ -31,7 +31,7 @@ final class NativeWorldPolishBench {
     }
     static boolean tick(Minecraft mc,NativeWorldView v,List<String> checks)throws Exception{
         age++;if(age>650)throw new IllegalStateException("World polish timeout case "+stage+", objects="+v.state.objects());
-        var screen=(NativeWorldScreen)mc.screen;
+        var screen=(NativeWorldScreen)MenuScreens.active(mc.screen);
         if(stage==0&&work.isDone()&&age>100){work.join();var units=v.state.objects().stream().filter(a->a.template().equals("AmericaInfantryRanger")).sorted(Comparator.comparingDouble(NativeSession.Actor::x)).toList();ranger=units.getFirst().id();fireUnit=units.getLast().id();technical=v.state.objects().stream().filter(a->a.template().startsWith("GLAVehicleTechnical")).findFirst().orElseThrow().id();
             work=CompletableFuture.runAsync(()->{var level=mc.getSingleplayerServer().getLevel(GeneralsMod.ARENA);var e=(EnderMan)level.getEntity(ender);if(e==null||e.getTarget()!=null||e.getRemainingPersistentAngerTime()!=0)throw new IllegalStateException("Unprovoked Enderman missing or acquired native unit: "+e);e.discard();},mc.getSingleplayerServer());next(1);
         }else if(stage==1&&work.isDone()){work.join();checks.add("A real AI-enabled neutral Enderman remains calm beside an original Ranger; water imports as water and lava as impassable");v.session.select(ranger);next(2);}

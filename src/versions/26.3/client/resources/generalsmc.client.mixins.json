@@ -14,9 +14,16 @@
     "RtsKeyMappingMixin",
     "NativeMusicMixin",
     "OriginalRenderTypeAccessor",
-    "ShaderCallbackStackMixin"
+    "ShaderCallbackStackMixin",
+    "MobDisableTint",
+    "MobDisableRenderState",
+    "ModernMenuOpenMixin",
+    "ModernWidgetSuppressionMixin",
+    "NativeDrivingAttackMixin",
+    "NativeRiderPoseMixin"
   ],
   "injectors": {
     "defaultRequire": 1
-  }
+  },
+  "plugin": "local.generalsmc.client.mixin.MenuMixinPlugin"
 }

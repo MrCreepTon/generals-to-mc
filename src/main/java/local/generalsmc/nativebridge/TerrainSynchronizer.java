@@ -9,6 +9,25 @@ import java.util.concurrent.CompletableFuture;
  * One sample and one unacknowledged update at a time; unchanged columns are not sent.
  */
 public final class TerrainSynchronizer implements AutoCloseable {
+    private static final Map<ServerLevel,Set<TerrainSynchronizer>> ACTIVE=new java.util.concurrent.ConcurrentHashMap<>();
+    private final Set<Long> dirty=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Block notifications only enqueue a bounded tile; sampling still belongs to the server thread. */
+    public static void changed(ServerLevel level,net.minecraft.core.BlockPos pos){var listeners=ACTIVE.get(level);if(listeners!=null)for(var listener:listeners)listener.changed(pos);}
+    private void changed(net.minecraft.core.BlockPos pos){
+        if(closed||dirty.size()>=128)return;var template=regions.getFirst();
+        // Include the clearance border when a hazard changes next to a tile boundary.
+        int minX=Math.floorDiv(pos.getX()-template.originX()-12,32),maxX=Math.floorDiv(pos.getX()-template.originX()+12,32);
+        int minZ=Math.floorDiv(pos.getZ()-template.originZ()-12,32),maxZ=Math.floorDiv(pos.getZ()-template.originZ()+12,32);
+        for(int x=minX;x<=maxX;x++)for(int z=minZ;z<=maxZ;z++){long key=((long)x<<32)|(z&0xffffffffL);if(dirty.size()<128)dirty.add(key);}
+    }
+    private TerrainExporter.Region dirtyRegion(NativeSession.State state){
+        Long nearest=null;double best=Double.POSITIVE_INFINITY;
+        for(long key:dirty){double x=(key>>32)*32+16,z=(int)key*32+16,score=(x-focusX)*(x-focusX)+(z-focusY)*(z-focusY);
+            for(var actor:state.objects())if(actor.owner()>=2&&!actor.contained()&&(actor.externalKey()==null||actor.externalKey().isEmpty())){double dx=x-actor.x()/WorldScale.UNITS_PER_BLOCK,dz=z-actor.y()/WorldScale.UNITS_PER_BLOCK;score=Math.min(score,dx*dx+dz*dz);}
+            if(score<best){best=score;nearest=key;}
+        }
+        if(nearest==null||!dirty.remove(nearest))return null;var template=regions.getFirst();return new TerrainExporter.Region((int)(nearest>>32)*32,(int)(long)nearest*32,32,32,template.originX(),template.originY(),template.originZ());
+    }
     private final NativeSession session;
     private final ServerLevel level;
     private final List<TerrainExporter.Region> regions;
@@ -22,13 +41,14 @@ public final class TerrainSynchronizer implements AutoCloseable {
     public void resourceSites(List<WorldResourceStore.Node> value){resourceSites=List.copyOf(value);}
     public void focus(double x,double y){focusX=x;focusY=y;}
     private long revision;
-    private boolean closed;
+    private volatile boolean closed;
 
     public TerrainSynchronizer(NativeSession session, ServerLevel level, List<TerrainExporter.Region> regions, long revision) {
         if (regions.isEmpty() || regions.size() > 256) throw new IllegalArgumentException("Surface scope must contain 1 to 256 tiles");
         this.session = session; this.level = level; this.regions = List.copyOf(regions); this.revision = revision;
         for (var region : regions) if (region.width() < 1 || region.depth() < 1 || (long)region.width()*region.depth() > 1024)
             throw new IllegalArgumentException("Surface tile exceeds 1024 columns");
+        ACTIVE.computeIfAbsent(level,l->java.util.concurrent.ConcurrentHashMap.newKeySet()).add(this);
     }
 
     /** Called on the Minecraft client tick; world reads execute on the owning server. */
@@ -83,7 +103,7 @@ public final class TerrainSynchronizer implements AutoCloseable {
             var unknown=tiles.stream().filter(t->!previous.containsKey(((long)(t.x()+16)<<32)|((t.y()+16)&0xffffffffL))).toList();
             region=unknown.isEmpty()?tiles.get((rounds-5)%tiles.size()):unknown.get((rounds-5)%unknown.size());
         }
-        var sampleRegion=region;
+        var urgent=dirtyRegion(state);var sampleRegion=urgent==null?region:urgent;
         pending = CompletableFuture.supplyAsync(() -> TerrainExporter.sample(level, sampleRegion), level.getServer());
     }
 
@@ -93,5 +113,5 @@ public final class TerrainSynchronizer implements AutoCloseable {
     }
     private static long key(TerrainExporter.Column c) { return ((long)c.x() << 32) | (c.y() & 0xffffffffL); }
     public long revision() { return revision; }
-    @Override public void close() { closed = true; if (pending != null) pending.cancel(false); previous.clear(); }
+    @Override public void close() { closed = true;var listeners=ACTIVE.get(level);if(listeners!=null){listeners.remove(this);if(listeners.isEmpty())ACTIVE.remove(level,listeners);}dirty.clear();if (pending != null) pending.cancel(false); previous.clear(); }
 }

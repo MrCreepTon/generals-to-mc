@@ -33,18 +33,18 @@ public final class SiteBlocks {
         Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB,Identifier.fromNamespaceAndPath("generalsmc","markers"),net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab.builder().title(net.minecraft.network.chat.Component.translatable("itemGroup.generalsmc")).icon(()->new ItemStack(startItem)).displayItems((parameters,entries)->{entries.accept(startItem);entries.accept(item);entries.accept(supplyItem);}).build());
     }
     private abstract static class VisibleMarker extends Block implements EntityBlock {
-        VisibleMarker(Properties p){super(p.lightLevel(s->10));}
+        VisibleMarker(Properties p){super(p);}
         @Override public net.minecraft.world.level.block.entity.BlockEntity newBlockEntity(BlockPos pos,BlockState state){return new SiteMarkerEntity(pos,state);}
     }
     private static final class SupplyMarker extends VisibleMarker {
         SupplyMarker(Properties p){super(p);}
         @Override protected void onPlace(BlockState state,Level level,BlockPos pos,BlockState old,boolean moved){super.onPlace(state,level,pos,old,moved);if(level instanceof net.minecraft.server.level.ServerLevel server&&old.getBlock()!=this)WorldSiteStore.get(server).put(pos,"SupplyDock",0,"resource");}
-        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this)WorldSiteStore.get(level).remove(pos);}
+        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this){WorldSiteStore.get(level).remove(pos);NativeNetworkServer.markersChanged();}}
     }
     private static final class StartMarker extends VisibleMarker {
         StartMarker(Properties p){super(p);}
-        @Override protected void onPlace(BlockState state,Level level,BlockPos pos,BlockState old,boolean moved){super.onPlace(state,level,pos,old,moved);if(level instanceof net.minecraft.server.level.ServerLevel server&&old.getBlock()!=this)WorldSiteStore.get(server).newStart(pos);}
-        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this)WorldSiteStore.get(level).remove(pos);}
+        @Override protected void onPlace(BlockState state,Level level,BlockPos pos,BlockState old,boolean moved){super.onPlace(state,level,pos,old,moved);if(level instanceof net.minecraft.server.level.ServerLevel server&&old.getBlock()!=this){WorldSiteStore.get(server).newStart(pos);NativeNetworkServer.markersChanged();}}
+        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this){WorldSiteStore.get(level).remove(pos);NativeNetworkServer.markersChanged();}}
         @Override protected net.minecraft.world.InteractionResult useWithoutItem(BlockState state,Level level,BlockPos pos,net.minecraft.world.entity.player.Player player,net.minecraft.world.phys.BlockHitResult hit){if(player instanceof net.minecraft.server.level.ServerPlayer server)NativeNetworkServer.openStart(server,pos);return net.minecraft.world.InteractionResult.SUCCESS;}
     }
     private static final class Marker extends VisibleMarker {
@@ -53,6 +53,6 @@ public final class SiteBlocks {
         @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block,BlockState> builder){builder.add(FACING);}
         @Override public BlockState getStateForPlacement(BlockPlaceContext context){return defaultBlockState().setValue(FACING,context.getHorizontalDirection().getOpposite());}
         @Override protected void onPlace(BlockState state,Level level,BlockPos pos,BlockState old,boolean moved){super.onPlace(state,level,pos,old,moved);if(level instanceof net.minecraft.server.level.ServerLevel server&&old.getBlock()!=this)WorldSiteStore.get(server).put(pos,"TechOilDerrick",(float)Math.toRadians(state.getValue(FACING).toYRot()),"structure");}
-        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this)WorldSiteStore.get(level).remove(pos);}
+        @Override protected void affectNeighborsAfterRemoval(BlockState state,net.minecraft.server.level.ServerLevel level,BlockPos pos,boolean moved){super.affectNeighborsAfterRemoval(state,level,pos,moved);if(level.getBlockState(pos).getBlock()!=this){WorldSiteStore.get(level).remove(pos);NativeNetworkServer.markersChanged();}}
     }
 }

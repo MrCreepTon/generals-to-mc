@@ -13,7 +13,7 @@ final class NativeMusicBench {
         if(!NativeAudio.claimsMusic()||mc.getMusicManager().isPlayingMusic(Musics.MENU))throw new IllegalStateException("Vanilla background music overlaps the active native soundtrack");
         mc.getMusicManager().startPlaying(new MusicInfo(Musics.MENU,1));mc.getMusicManager().tick();
         if(mc.getMusicManager().isPlayingMusic(Musics.MENU))throw new IllegalStateException("Vanilla soundtrack restarted during native music ownership");
-        unchanged(mc);checks.add("An active audio-enabled native match stops an existing Minecraft background track and prevents another from starting without changing saved music/master volumes ("+(mc.screen instanceof NativeWorldScreen?"RTS screen":"Minecraft/menu mode")+")");
+        unchanged(mc);checks.add("An active audio-enabled native match stops an existing Minecraft background track and prevents another from starting without changing saved music/master volumes ("+(MenuScreens.active(mc.screen) instanceof NativeWorldScreen?"RTS screen":"Minecraft/menu mode")+")");
     }
     static void after(Minecraft mc,List<String> checks){
         if(NativeAudio.claimsMusic())throw new IllegalStateException("Stopped RTS retained music ownership");

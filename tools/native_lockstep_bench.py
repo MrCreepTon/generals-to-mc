@@ -93,6 +93,19 @@ def main():
             assert math.hypot(moved['x']-goal[0],moved['y']-goal[1])<12,(moved,goal)
         checks.append('Two human players select their own original dozers and move independently through relayed native commands')
         checks.append('Periodic original simulation CRC checkpoints agree on authority and both participants across160 committed frames')
+        if '--drive' in sys.argv:
+            before=[];terrain=[]
+            for a in units:
+                current=next(o for o in states[0]['objects'] if o['id']==a['id']);before.append(current)
+                bx=int(current['x']//8)-16;by=int(current['y']//8)-16;rev+=1
+                terrain.append('TERRAIN3 '+str(rev)+' 1024 '+' '.join(f'{x} {y} 0 0 256 0' for x in range(bx,bx+32) for y in range(by,by+32)))
+            commit(terrain)
+            commit([f'HOST_DRIVE {a["id"]} 1 0 1 0 0 0 0 0' for a in before])
+            for _ in range(90):commit()
+            commit([f'HOST_DRIVE {a["id"]} 0 0 0 0 0 0 0 0' for a in before])
+            for a in before:
+                moved=next(o for o in states[0]['objects'] if o['id']==a['id']);assert math.hypot(moved['x']-a['x'],moved['y']-a['y'])>12,(a,moved)
+            checks.append('Server-issued driving and release keep identical periodic simulation CRCs on authority and both independent peers')
         if '--combat' in sys.argv:
             cc=next(a for a in states[0]['objects'] if a['owner']==2 and a['template'].endswith('CommandCenter'))
             x,y=cc['x'],cc['y']-80

@@ -5,10 +5,13 @@
 #include "WorldScene.h"
 #include "Bridge.h"
 #include "dx8wrapper.h"
+#include "texture.h"
+#include "WWMath/vector2.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/Display.h"
+#include "GameClient/Image.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "Common/PlayerList.h"
@@ -32,8 +35,11 @@ IDirect3DSurface8* previousDepth = nullptr;
 DWORD lastGui = 0;
 DWORD guiStarted=0,lastGuiCost=0;
 bool guiReplay = false;
-struct HealthBar{unsigned int id;float x,y,z,dx,dy,width,height,ratio;unsigned int color,outline;};
+struct HealthBar{unsigned int id;float x,y,z,dx,dy,width,height,ratio;unsigned int color,outline;bool relative;};
 std::vector<HealthBar> healthBars;
+Object* overheadObject=nullptr;Coord3D overheadPoint={};ICoord2D overheadScreen={};bool overheadValid=false,overheadHealthX=false;
+struct OverheadImage {unsigned int id,texture,color;float x,y,z,dx,dy,width,height,u,v,uw,vh;int tw,th,mode;float yx,yy,yz;bool relative;};
+std::vector<OverheadImage> overheadImages;
 std::vector<unsigned int> guiPixels;
 int guiClockCount=0,guiClockPercent=-1;
 HCURSOR cursorHandle=nullptr;
@@ -112,7 +118,7 @@ void cursorSource(void* handle,const char* file) {
 }
 void drawWorldIndicators() {
     if(!hasHostView())return;
-    if(!guiReplay)healthBars.clear();
+    if(!guiReplay){healthBars.clear();overheadImages.clear();}
     for(Object* object=TheGameLogic->getFirstObject();object;object=object->getNextObject()) {
         auto draw=object->getDrawable();
         if(!draw||!ThePlayerList->getLocalPlayer()||(!isExternalObject(object->getID())&&(draw->isDrawableEffectivelyHidden()||object->getShroudedStatus(ThePlayerList->getLocalPlayer()->getPlayerIndex())>OBJECTSHROUD_PARTIAL_CLEAR)))continue;
@@ -136,9 +142,46 @@ bool mobCaptionPosition(unsigned int id,int* x,int* y,int height){
 }
 bool captureHealthBar(Object* object,int x,int y,float width,float height,float ratio,unsigned int color,unsigned int outline){
     if(!hasHostView()||!object)return false;
-    if(!guiReplay){Coord3D health;object->getHealthBoxPosition(health);ICoord2D screen;hostWorldToScreen(&health,&screen);healthBars.push_back({(unsigned int)object->getID(),health.x,health.y,health.z,float(x-screen.x),float(y-screen.y),width,height,ratio,color,outline});}return true;
+    if(!guiReplay){Coord3D health;object->getHealthBoxPosition(health);ICoord2D screen;hostWorldToScreen(&health,&screen);healthBars.push_back({(unsigned int)object->getID(),health.x-object->getPosition()->x,health.y-object->getPosition()->y,health.z-object->getPosition()->z,float(x-screen.x),float(y-screen.y),width,height,ratio,color,outline,true});}return true;
 }
-void healthBarState(std::ostream& out){out<<",\"healthBars\":[";bool comma=false;for(auto& b:healthBars){if(comma)out<<',';comma=true;out<<"{\"id\":"<<b.id<<",\"x\":"<<b.x<<",\"y\":"<<b.y<<",\"z\":"<<b.z<<",\"dx\":"<<b.dx<<",\"dy\":"<<b.dy<<",\"width\":"<<b.width<<",\"height\":"<<b.height<<",\"ratio\":"<<b.ratio<<",\"color\":"<<b.color<<",\"outline\":"<<b.outline<<'}';}out<<']';}
+void overheadProjection(const Coord3D* point,const ICoord2D* screen){if(overheadObject&&point&&screen){overheadPoint=*point;overheadScreen=*screen;overheadValid=true;}}
+OverheadScope::OverheadScope(Object* object,bool useHealthX):previous(overheadObject),x(overheadPoint.x),y(overheadPoint.y),z(overheadPoint.z),sx(overheadScreen.x),sy(overheadScreen.y),valid(overheadValid),healthX(overheadHealthX){overheadObject=object;overheadValid=false;overheadHealthX=useHealthX;}
+OverheadScope::~OverheadScope(){overheadObject=previous;overheadPoint={x,y,z};overheadScreen={sx,sy};overheadValid=valid;overheadHealthX=healthX;}
+
+bool captureOverheadImage(const Image* image,int x,int y,int right,int bottom,unsigned int color,int mode){
+    if(!overheadObject||!image||!hasHostView()||!worldInterfaceActive())return false;
+    if(!guiReplay&&overheadImages.size()<4096){unsigned int texture=overheadTexture(image);if(!texture)return false;Coord3D health;overheadObject->getHealthBoxPosition(health);auto vertical=overheadValid?overheadPoint:health;auto horizontal=overheadHealthX?health:vertical;ICoord2D screen,ys;hostWorldToScreen(&horizontal,&screen);hostWorldToScreen(&vertical,&ys);auto origin=overheadObject->getPosition();auto uv=image->getUV();auto size=image->getTextureSize();
+        overheadImages.push_back({(unsigned int)overheadObject->getID(),texture,color,horizontal.x-origin->x,horizontal.y-origin->y,horizontal.z-origin->z,float(x-screen.x),float(y-ys.y),float(right-x),float(bottom-y),uv->lo.x,uv->lo.y,uv->hi.x-uv->lo.x,uv->hi.y-uv->lo.y,size->x,size->y,mode,vertical.x-origin->x,vertical.y-origin->y,vertical.z-origin->z,true});}
+    return true;
+}
+unsigned int overheadFontTexture(TextureClass*);
+bool captureOverheadQuads(TextureClass* texture,const Vector2* positions,const Vector2* uv,const unsigned long* colors,int count,float screenWidth,float screenHeight){
+    if(!overheadObject||!worldInterfaceActive()||!hasHostView()||!texture||count<=0||count%4)return false;
+    if(guiReplay)return true;
+    auto id=overheadFontTexture(texture);if(!id)return false;
+    Coord3D health;overheadObject->getHealthBoxPosition(health);ICoord2D screen;hostWorldToScreen(&health,&screen);
+    for(int i=0;i<count&&overheadImages.size()<4096;i+=4){
+        float left=1e10f,top=1e10f,right=-1e10f,bottom=-1e10f,u=1e10f,v=1e10f,ur=-1e10f,vb=-1e10f;
+        for(int k=i;k<i+4;++k){float x=(positions[k].X+1)*screenWidth*.5f,y=(1-positions[k].Y)*screenHeight*.5f;left=std::min(left,x);top=std::min(top,y);right=std::max(right,x);bottom=std::max(bottom,y);u=std::min(u,uv[k].X);v=std::min(v,uv[k].Y);ur=std::max(ur,uv[k].X);vb=std::max(vb,uv[k].Y);}
+        if(right<=left||bottom<=top)continue;
+        overheadImages.push_back({(unsigned int)overheadObject->getID(),id,(unsigned int)colors[i],health.x-overheadObject->getPosition()->x,health.y-overheadObject->getPosition()->y,health.z-overheadObject->getPosition()->z,left-screen.x,top-screen.y,right-left,bottom-top,u,v,ur-u,vb-v,texture->Get_Width(),texture->Get_Height(),0,health.x-overheadObject->getPosition()->x,health.y-overheadObject->getPosition()->y,health.z-overheadObject->getPosition()->z,true});
+    }return true;
+}
+void imageState(std::ostream& out,const std::vector<OverheadImage>& images){
+    bool comma=false;for(auto& b:images){if(comma)out<<',';comma=true;out<<"{\"id\":"<<b.id<<",\"texture\":"<<b.texture<<",\"x\":"<<b.x<<",\"y\":"<<b.y<<",\"z\":"<<b.z<<",\"dx\":"<<b.dx<<",\"dy\":"<<b.dy<<",\"width\":"<<b.width<<",\"height\":"<<b.height<<",\"u\":"<<b.u<<",\"v\":"<<b.v<<",\"uw\":"<<b.uw<<",\"vh\":"<<b.vh<<",\"tw\":"<<b.tw<<",\"th\":"<<b.th<<",\"color\":"<<b.color<<",\"mode\":"<<b.mode<<",\"yx\":"<<b.yx<<",\"yy\":"<<b.yy<<",\"yz\":"<<b.yz<<",\"relative\":"<<(b.relative?"true":"false")<<'}';}
+}
+void healthBarState(std::ostream& out){
+    out<<",\"healthBars\":[";bool comma=false;for(auto& b:healthBars){if(comma)out<<',';comma=true;out<<"{\"id\":"<<b.id<<",\"x\":"<<b.x<<",\"y\":"<<b.y<<",\"z\":"<<b.z<<",\"dx\":"<<b.dx<<",\"dy\":"<<b.dy<<",\"width\":"<<b.width<<",\"height\":"<<b.height<<",\"ratio\":"<<b.ratio<<",\"color\":"<<b.color<<",\"outline\":"<<b.outline<<",\"relative\":"<<(b.relative?"true":"false")<<'}';}
+    out<<"],\"overheadImages\":[";imageState(out,overheadImages);
+    // Original Disabled Anim2D: SCPLightning000..015, 66 ms per frame.
+    // Assets are read from the user's installation and remain in the private cache.
+    static std::vector<OverheadImage> disabled;
+    if(disabled.empty()&&TheMappedImageCollection){
+        for(int i=0;i<16;++i){char name[32];sprintf_s(name,"SCPLightning%03d",i);auto image=TheMappedImageCollection->findImageByName(name);if(!image){disabled.clear();break;}auto texture=overheadTexture(image);if(!texture){disabled.clear();break;}auto uv=image->getUV();auto size=image->getTextureSize();
+            disabled.push_back({0,texture,0xffffffff,0,0,0,0,0,0,0,uv->lo.x,uv->lo.y,uv->hi.x-uv->lo.x,uv->hi.y-uv->lo.y,size->x,size->y,0});}
+    }
+    out<<"],\"disabledIcons\":[";imageState(out,disabled);out<<']';
+}
 void traceGuiClock(int percent){if(previousTarget&&!guiReplay){++guiClockCount;guiClockPercent=percent;}}
 void guiClockState(std::ostream& out){out<<",\"guiClockCount\":"<<guiClockCount<<",\"guiClockPercent\":"<<guiClockPercent;}
 bool preserveGuiClock(){return previousTarget && !guiReplay;}

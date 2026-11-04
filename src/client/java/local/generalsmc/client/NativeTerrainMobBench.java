@@ -40,7 +40,7 @@ final class NativeTerrainMobBench {
         stage=0;age=0;
     }
     static boolean tick(Minecraft mc,NativeWorldView view,List<String> checks) throws Exception {
-        age++;var state=view.state;var screen=(NativeWorldScreen)mc.screen;
+        age++;var state=view.state;var screen=(NativeWorldScreen)MenuScreens.active(mc.screen);
         if(age>400)throw new IllegalStateException("Mob/terrain regression timeout at case "+stage+", ranger="+(ranger==0?null:actor(view,ranger))+", goal="+goal);
         if(stage==0&&work.isDone()&&age>100){work.join();ranger=state.objects().stream().filter(o->o.template().equals("AmericaInfantryRanger")).findFirst().orElseThrow().id();view.session.select(ranger);next(1);}
         else if(stage==1&&age>15){goal=view.origin.nativePoint(new Vec3(-23.5,64,-13.5));view.session.move(goal.x,goal.y,goal.z);next(2);}
