@@ -14,6 +14,7 @@ public abstract class RtsCameraMixin {
     @Shadow protected abstract void setRotation(float yaw, float pitch);
     @Inject(method = "setup", at = @At("TAIL"))
     private void rts(BlockGetter level, Entity entity, boolean thirdPerson, boolean inverse, float partialTick, CallbackInfo ci) {
+        NativeWorldView.prepareFrame();
         if(NativeWorldView.controlling()) {
             var view=NativeWorldView.current;view.advanceCamera();setRotation((float)view.renderYaw,60);
             double angle=Math.toRadians(view.renderYaw),back=view.renderZoom/Math.tan(Math.toRadians(60));
@@ -24,5 +25,6 @@ public abstract class RtsCameraMixin {
             setPosition(x,y,z);
             return;
         }
+        var mc=net.minecraft.client.Minecraft.getInstance();if(NativeWorldView.active()&&mc.player!=null){var position=NativeWorldView.current.riderCameraPosition(mc.player,((Camera)(Object)this).getPosition(),partialTick);if(position!=null)setPosition(position.x,position.y,position.z);}
     }
 }

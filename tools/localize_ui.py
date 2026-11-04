@@ -20,7 +20,7 @@ for folder,wrapper in [('src/client/java/local/generalsmc/client','L.s'),('src/m
             if before.endswith(wrapper+'('):return match.group()
             return wrapper+'('+match.group()+')'
         source=re.sub(r'"(?:\\.|[^"\\])*"',replace,source)
-        if folder.startswith('src/client'):source=source.replace('Component.literal(', 'L.component(')
+        if folder.startswith('src/client'):source=re.sub(r'(?<![\w.])Component[.]literal[(]', 'L.component(',source)
         file.write_text(source,encoding='utf-8')
 lang=root/'src/main/resources/assets/generalsmc/lang'
 for code in ['en_us','ru_ru']:

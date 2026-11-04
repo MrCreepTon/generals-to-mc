@@ -20,7 +20,7 @@ final class MarkerService {
     private static NativeNetworkServer.MapPoint point(WorldSiteStore store,BlockPos p,String kind){var text=store.annotation(p);return new NativeNetworkServer.MapPoint(p.getX(),p.getY(),p.getZ(),kind,text.name(),text.note());}
     static void index(ServerPlayer player,boolean resourcesOnly){
         var store=WorldSiteStore.get(player.serverLevel());var points=new ArrayList<NativeNetworkServer.MapPoint>();
-        for(var site:store.sites())if(!resourcesOnly||site.cash()!=0&&site.cash()!=-2)points.add(point(store,site.pos(),site.kind().equals("resource")?"supply":"oil"));
+        for(var site:store.sites())if(!resourcesOnly||site.cash()!=-2)points.add(point(store,site.pos(),site.kind().equals("resource")?"supply":"oil"));
         if(!resourcesOnly)for(var start:store.starts())points.add(point(store,start.pos(),"start"));
         NativeNetworkServer.send(player,resourcesOnly?"map_points":"marker_points",resourcesOnly?points:new NativeNetworkServer.MarkerIndex(points,editable(player)));
     }

@@ -26,6 +26,19 @@ dependencies {
     add(unobfuscated ? 'implementation' : 'modImplementation', "net.fabricmc.fabric-api:fabric-api:${profile.fabric_api}")
     include "net.fabricmc.fabric-api:fabric-api:${profile.fabric_api}"
 }
+// Compile against the real optional Modern UI SDK. It is never bundled.
+def mui312=target=='1.21.4'
+def mui313=target in ['26.1','26.1.1','26.1.2']
+if(mui312||mui313){
+    repositories {
+        exclusiveContent { forRepository { maven { url='https://maven.izzel.io/releases/' } }; filter { includeGroup 'icyllis.modernui' } }
+        exclusiveContent { forRepository { mavenCentral() }; filter { includeGroup 'dev.icyllis' } }
+    }
+    dependencies {
+        compileOnly(mui312?'icyllis.modernui:ModernUI-Core:3.12.0':'dev.icyllis:modernui-core:3.13.0') { transitive=false }
+        add(unobfuscated?'compileOnly':'modCompileOnly',mui312?'icyllis.modernui:ModernUI-Fabric:1.21.4-3.12.0.3':'icyllis.modernui:ModernUI-Fabric:26.1.2-3.13.0.5') { transitive=false }
+    }
+}
 sourceSets.test.java.exclude 'local/generalsmc/sim/**'
 // Later adapters replace only matching files. Resources follow the same ordering.
 def adapters=profile.getProperty('overlays',target).split(',').collect { it.trim() }.findAll { !it.isEmpty() }
@@ -33,6 +46,7 @@ if(adapters.any { !(it ==~ /[a-zA-Z0-9._-]+/) }) throw new GradleException('Inva
 ['main','client'].each { kind ->
     ['java','resources'].each { type ->
         def roots=[file("src/${kind}/${type}")]+adapters.collect { file("src/versions/${it}/${kind}/${type}") }
+        if(kind=='client'&&type=='java'&&(mui312||mui313))roots.addAll([file('src/integrations/modernui/java'),file('src/integrations/'+(mui312?'modernui312':'modernui313')+'/java')])
         def winners=[:]
         roots.each { root -> fileTree(root).files.each { source ->
             winners[root.toPath().relativize(source.toPath()).toString().replace('\\','/')]=source.canonicalFile
@@ -86,10 +100,10 @@ tasks.register('verifyRelease', Exec) {
 }
 tasks.register('releaseSources', Zip) {
     from('tools/watch_latency.py') { into 'tools' }
-    from('tools') { include 'native_emp_bench.py','native_navigation_bench.py','native_pointer_bench.py','native_path_budget_bench.py','native_material_bench.py','native_ai_bench.py','native_group_bench.py','native_lockstep_bench.py','native_retry_bench.py','native_feedback_bench.py','verify_native_patch.py'; into 'tools' }
+    from('tools') { include 'native_graphics_reported_bench.py','native_npc_oil_bench.py','native_latest_bench.py','native_supply_regression_bench.py','native_emp_bench.py','native_navigation_bench.py','native_pointer_bench.py','native_path_budget_bench.py','native_material_bench.py','native_ai_bench.py','native_group_bench.py','native_lockstep_bench.py','native_retry_bench.py','native_feedback_bench.py','native_effect_lifetime_bench.py','native_music_bench.py','native_resource_bench.py','verify_native_patch.py'; into 'tools' }
     archiveFileName = "generals-minecraft-${project.version}-source.zip"
     destinationDirectory = layout.buildDirectory.dir('release')
-    from('.') { include 'src/**','native/**','tools/prepare_engine.py','tools/stage_native.py','tools/patch*.py','tools/check_release.py','tools/draft_release.py','tools/build.py','tools/ci_versions.py','tools/generate_marker_assets.py','tools/localize_ui.py','tools/ui_translations.json','Build-Native.ps1','gradle/**','gradlew','gradlew.bat','*.gradle','gradle.properties','versions/**','.github/**','.gitignore','.gitattributes'; exclude '**/__pycache__/**' }
+    from('.') { include 'src/**','native/**','tools/prepare_engine.py','tools/stage_native.py','tools/patch*.py','tools/check_release.py','tools/draft_release.py','tools/build.py','tools/ci_versions.py','tools/generate_marker_assets.py','tools/localize_ui.py','tools/ui_translations.json','Build-Native.ps1','Makefile','gradle/**','gradlew','gradlew.bat','*.gradle','gradle.properties','versions/**','.github/**','.gitignore','.gitattributes'; exclude '**/__pycache__/**' }
     doLast {
         def source=archiveFile.get().asFile
         def sha=java.security.MessageDigest.getInstance('SHA-256').digest(source.bytes).encodeHex().toString()

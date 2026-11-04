@@ -27,7 +27,7 @@ public final class GeneralsClient implements ClientModInitializer {
         catch(ReflectiveOperationException error){throw new IllegalStateException("Development fixture unavailable: "+type,error);}
     }
     private static java.util.concurrent.CompletableFuture<Void> fixtureLanguage;
-    private static boolean fixtureLanguage(Minecraft mc){if(fixtureLanguage==null){if(!(mc.screen instanceof net.minecraft.client.gui.screens.TitleScreen||mc.screen instanceof net.minecraft.client.gui.screens.AccessibilityOnboardingScreen))return false;String language=System.getProperty("generalsmc.testLanguage","ru_ru");mc.getLanguageManager().setSelected(language);mc.options.languageCode=language;fixtureLanguage=mc.reloadResourcePacks();return false;}if(!fixtureLanguage.isDone())return false;fixtureLanguage.join();return true;}
+    private static boolean fixtureLanguage(Minecraft mc){if(fixtureLanguage==null){if(!(MenuScreens.active(mc.screen) instanceof net.minecraft.client.gui.screens.TitleScreen||MenuScreens.active(mc.screen) instanceof net.minecraft.client.gui.screens.AccessibilityOnboardingScreen))return false;String language=System.getProperty("generalsmc.testLanguage","ru_ru");mc.getLanguageManager().setSelected(language);mc.options.languageCode=language;fixtureLanguage=mc.reloadResourcePacks();return false;}if(!fixtureLanguage.isDone())return false;fixtureLanguage.join();return true;}
     private static void fixture(String flag,String type,Minecraft mc){if(Boolean.getBoolean("generalsmc."+flag)&&fixtureLanguage(mc))development(type,"tick",null,mc);}
     @Override public void onInitializeClient() {
         NativeNetworkClient.install();RtsBindings.install();
@@ -36,7 +36,7 @@ public final class GeneralsClient implements ClientModInitializer {
             if(screen instanceof net.minecraft.client.gui.screens.TitleScreen||screen instanceof net.minecraft.client.gui.screens.PauseScreen)
                 net.fabricmc.fabric.api.client.screen.v1.Screens.getButtons(screen).add(MenuButton.styled(L.component("Generals"),b->GeneralsGuide.open(screen)).bounds(w-112,6,106,20).build());
         });
-        EntityRendererRegistry.register(local.generalsmc.nativebridge.NativeActorEntity.TYPE,net.minecraft.client.renderer.entity.NoopRenderer::new);
+        EntityRendererRegistry.register(local.generalsmc.nativebridge.NativeActorEntity.TYPE,NativeProxyRenderer::new);
         ClientCommandRegistrationCallback.EVENT.register((dispatcher,access)->dispatcher.register(
             ClientCommandManager.literal("zh-native").executes(context->NativeRtsController.open())
                 .then(ClientCommandManager.argument("faction",com.mojang.brigadier.arguments.StringArgumentType.word())
@@ -65,14 +65,15 @@ public final class GeneralsClient implements ClientModInitializer {
                 if(System.getProperty("generalsmc.nativeRenderDistance")!=null)mc.options.renderDistance().set(Math.max(4,Math.min(32,Integer.getInteger("generalsmc.nativeRenderDistance",8))));
                 if(System.getProperty("generalsmc.nativeSimulationDistance")!=null)mc.options.simulationDistance().set(Math.max(4,Math.min(32,Integer.getInteger("generalsmc.nativeSimulationDistance",6))));
             }
-            while(nativeToggle.consumeClick())if(mc.level!=null&&mc.screen==null)NativeRtsController.toggle();
-            while(nativeMenu.consumeClick())if(mc.screen==null)GeneralsGuide.open(null);
+            while(nativeToggle.consumeClick())if(mc.level!=null&&MenuScreens.active(mc.screen)==null)NativeRtsController.toggle();
+            while(nativeMenu.consumeClick())if(MenuScreens.active(mc.screen)==null)GeneralsGuide.open(null);
             if (noticeTicks > 0) noticeTicks--;
             fixture("nativeVersionBench","NativeVersionBench",mc);
             fixture("nativeBench","NativeClientBench",mc);
             fixture("nativeManualBench","NativeWorldAccessBench",mc);
             NativeRtsController.tick(mc);
             NativeNetworkClient.tick(mc);
+            NativeDrivingClient.tick(mc);
             fixture("nativeReleaseBench","NativeReleaseBench",mc);
             fixture("nativeSetupBench","NativeSetupBench",mc);
             fixture("nativeNetworkBench","NativeNetworkBench",mc);

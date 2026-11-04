@@ -2,6 +2,26 @@
   "required": true,
   "package": "local.generalsmc.client.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["RtsCameraMixin", "RtsFovMixin", "RtsHudMixin", "RtsHandMixin", "NativeImagePixelsAccessor", "NativeFogEntityMixin", "RtsToastsMixin", "NativeStructurePickMixin", "RtsKeyMappingMixin", "NativeMusicMixin"],
-  "injectors": {"defaultRequire": 1}
+  "client": [
+    "RtsCameraMixin",
+    "RtsFovMixin",
+    "RtsHudMixin",
+    "RtsHandMixin",
+    "NativeImagePixelsAccessor",
+    "NativeFogEntityMixin",
+    "RtsToastsMixin",
+    "NativeStructurePickMixin",
+    "RtsKeyMappingMixin",
+    "NativeMusicMixin",
+    "MobDisableTint",
+    "MobDisableRenderState",
+    "ModernMenuOpenMixin",
+    "ModernWidgetSuppressionMixin",
+    "NativeDrivingAttackMixin",
+    "NativeRiderPoseMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "plugin": "local.generalsmc.client.mixin.MenuMixinPlugin"
 }

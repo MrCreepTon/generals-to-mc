@@ -31,14 +31,14 @@ final class NativeReadmeBench {
             mc.options.guiScale().set(2);mc.resizeDisplay();
             mc.setScreen(new GeneralsGuide(new GeneralsSetupScreen(null)));next(1);
         }else if(stage==1){
-            var guide=(GeneralsGuide)mc.screen;
+            var guide=(GeneralsGuide)MenuScreens.active(mc.screen);
             if(age==20)shot(mc,"guide-"+guide.step);
             if(age==40){if(guide.step<3){NativeSetupBench.click(guide,"Далее");age=0;}
                 else{NativeSetupBench.click(guide,"Готово");mc.setScreen(new MarkerFinderScreen(null));NativeReleaseUxBench.marker("marker_info",NativeReleaseBench.SUPPLY);next(2);}}
-        }else if(stage==2&&mc.screen instanceof MarkerDetailsScreen s&&age>10){
+        }else if(stage==2&&MenuScreens.active(mc.screen) instanceof MarkerDetailsScreen s&&age>10){
             s.name.setValue("Village supplies");s.note.setValue("Reserve for village defence");next(3);
         }else if(stage==3){
-            var s=(MarkerDetailsScreen)mc.screen;
+            var s=(MarkerDetailsScreen)MenuScreens.active(mc.screen);
             if(age==15)shot(mc,"marker-0");
             if(age==30)s.note.setValue("Village defence");
             if(age==40)shot(mc,"marker-1");

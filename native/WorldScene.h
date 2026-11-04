@@ -2,6 +2,8 @@
 #pragma once
 #include <ostream>
 class RenderObjClass;
+class Image;
+namespace zhmc {unsigned int overheadTexture(const Image*);}
 class SegmentedLineClass;class Vector3;
 namespace zhmc {bool captureWaypointLine(SegmentedLineClass*,const Vector3*,int);bool captureWaypointNode(RenderObjClass*);}
 namespace zhmc {

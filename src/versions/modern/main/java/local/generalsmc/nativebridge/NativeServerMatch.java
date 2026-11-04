@@ -79,7 +79,7 @@ public final class NativeServerMatch implements AutoCloseable {
                 String preferred=spec.armies().size()>2?"twilight flame":"tournament desert";
                 String map=spec.map().isBlank()?state.maps().stream().filter(m->m.toLowerCase(Locale.ROOT).contains(preferred)).findFirst().orElseThrow(()->new IOException(local.generalsmc.LocalText.token("В выбранной игре не найдена карта для этого числа армий"))):spec.map();
                 if(!state.maps().contains(map))throw new IOException(local.generalsmc.LocalText.token("Карта отсутствует в выбранной игре"));
-                spec=new NativeMatchSpec(spec.id(),map,spec.seed(),spec.cash(),spec.fingerprint(),spec.armies());spec.configure(session);transport.launch(spec);phase=1;transport.progress(local.generalsmc.LocalText.token("Подготовка мира…"));return;
+                spec=new NativeMatchSpec(spec.id(),map,spec.seed(),spec.cash(),spec.fingerprint(),spec.armies(),spec.superweaponLimit());spec.configure(session);transport.launch(spec);phase=1;transport.progress(local.generalsmc.LocalText.token("Подготовка мира…"));return;
             }
             if(phase==1){
                 if(!state.inGame()||state.objects().stream().noneMatch(a->a.owner()==2&&a.structure()))return;

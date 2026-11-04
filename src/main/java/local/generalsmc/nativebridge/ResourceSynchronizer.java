@@ -22,8 +22,8 @@ public final class ResourceSynchronizer implements AutoCloseable {
     private java.util.function.Predicate<WorldResourceStore.Node> visible=n->true;
     public void visibility(java.util.function.Predicate<WorldResourceStore.Node> value){visible=value;}
     public long deferredVisible;
-    private boolean closed;
-    public ResourceSynchronizer(NativeSession session,ServerLevel level,int x,int y,int z){this.session=session;this.level=level;originX=x;originY=y;originZ=z;}
+    private volatile boolean closed;
+    public ResourceSynchronizer(NativeSession session,ServerLevel level,int x,int y,int z){this.session=session;this.level=level;originX=x;originY=y;originZ=z;level.getServer().execute(()->{if(!closed){WorldResourceStore.get(level).resetStocks();WorldSiteStore.get(level).resetResourceStocks();}});}
     public void tick(NativeSession.State state) throws IOException {
         if(closed||!state.inGame()||state.resourceTemplate()==null||state.terrainColumns()<4096)return;
         var changes=new HashMap<String,Integer>();
@@ -32,7 +32,7 @@ public final class ResourceSynchronizer implements AutoCloseable {
             registered.add(resource.key());
             if(resource.cash()>=0&&!Objects.equals(cash.get(resource.key()),resource.cash())){cash.put(resource.key(),resource.cash());changes.put(resource.key(),resource.cash());}
         }
-        if(!changes.isEmpty())level.getServer().execute(()->{var store=WorldResourceStore.get(level);changes.forEach((key,value)->{store.remaining(key,value);WorldSiteStore.get(level).remaining(key,value);});});
+        if(!changes.isEmpty())level.getServer().execute(()->{if(closed)return;var store=WorldResourceStore.get(level);changes.forEach((key,value)->{store.remaining(key,value);WorldSiteStore.get(level).remaining(key,value);});});
         if(pending!=null&&pending.isDone()){
             discovered=pending.join();
             var wanted=new HashSet<String>();for(var node:discovered)wanted.add(node.key());

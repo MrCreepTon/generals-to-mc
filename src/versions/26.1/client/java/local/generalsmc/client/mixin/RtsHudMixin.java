@@ -12,4 +12,9 @@ public class RtsHudMixin {
     private void hideVanilla(GuiGraphicsExtractor graphics, DeltaTracker delta, CallbackInfo ci) {
         if (NativeWorldView.controlling()) ci.cancel();
     }
+    @Inject(method="extractCrosshair",at=@At("HEAD"),cancellable=true)
+    private void vehicleCrosshair(GuiGraphicsExtractor graphics, DeltaTracker delta, CallbackInfo ci){if(local.generalsmc.client.NativeDrivingHud.draw(graphics))ci.cancel();}
+    @Inject(method="extractVehicleHealth",at=@At("HEAD"),cancellable=true)
+    private void vehicleHealth(CallbackInfo ci){if(local.generalsmc.client.NativeDrivingHud.mounted())ci.cancel();}
+
 }

@@ -2,122 +2,112 @@
 
 [English](DEVELOPMENT.md) · **Русский**
 
-Выполняйте команды из корня репозитория, где находятся `Makefile`, `build.gradle` и `.github/`. Игроку нужен только готовый JAR.
-
-## GitHub Actions
-
-Откройте **Actions → Build mod → Run workflow**. Выберите `all` или профиль, например `26.3`. Скачайте `generals-minecraft-mc26.3` из **Artifacts**: внутри JAR, документация, контрольные суммы и соответствующие исходники.
-
-CI собирает закреплённый движок на Windows, затем JAR на Linux. Установленные игры и секреты не нужны. Сборка на Linux не означает поддержку запуска на Linux. Workflow проверен локально; для удалённого запуска загрузите репозиторий на GitHub.
-
-Нативный EXE кэшируется отдельно. Изменения в `native/`, `Build-Native.ps1`, `tools/prepare_engine.py` или `tools/patch*.py` запускают его сборку заново; изменения Java и документации используют готовый EXE. Компиляция пропускается только при точном совпадении ключа. В ключ включено семейство runner/компилятора; для принудительной пересборки измените суффикс `v1` или удалите запись в **Actions → Caches**. Проверки JAR и аудит выполняются как обычно.
+Выполняйте команды из корня репозитория. Игроку нужен готовый JAR, инструменты сборки ему не нужны.
 
 ## Локальная сборка
 
-Нужны Windows, GNU Make, Python 3.10+, Git, CMake 3.28+, Visual Studio 2022 C++/Windows SDK с инструментами x86, JDK 25 для Gradle и JDK 21 для целей 1.21.x. При необходимости задайте `JAVA_HOME` и `JAVA21_HOME`.
+Нужны Windows, GNU Make, Python 3.10+, Git, CMake 3.28+, Visual Studio 2022 C++ с инструментами x86 и Windows SDK, JDK 25 для Gradle и JDK 21 для Minecraft 1.21.x. Если Gradle не находит Java, задайте `JAVA_HOME` и `JAVA21_HOME`.
 
 ```sh
-make                        # Движок один раз + все версии Minecraft
-make build MC=26.3          # Одна версия
-make release               # Полная сборка в dist/<mod_version>/
-make versions              # Список профилей
-make source                # Чистый ZIP исходников
+make                                      # Движок один раз, затем все версии
+make build MC=1.21.4                       # Одна версия Minecraft
+make release                              # Все пакеты в dist/<mod_version>/
+make package                              # Собрать уже готовые проверенные пакеты
+make source                               # Исходники вместе с Makefile
+make versions                             # Доступные профили
 make help
 ```
 
-Пакеты отдельных версий находятся в `build/release/player/<Minecraft>/`. По умолчанию выбрана 26.3. Остальные профили: 1.21.4, 1.21.11, 26.1, 26.1.1, 26.1.2 и 26.2.
+Без Make выполните `python tools/build.py release`. Пакеты отдельных версий находятся в `build/release/player/<Minecraft>/`. По умолчанию выбрана 26.3. `make release` также собирает обе версии документации, исходники и SHA256. Ничего не публикует.
 
-`make release` собирает все JAR, исходники, документацию на двух языках и SHA256. `make package` собирает уже проверенные пакеты. Обе команды ничего не публикуют. Без Make используйте `python tools/build.py release`.
+`Build-Native.ps1` собирает движок ревизии `f746af7e626c96e693cb74a032da47a602c1a039` с адаптерами. Результат находится в `build/native/windows-x86/generalszh.exe`. Все профили Minecraft используют этот движок. Оригинальные ресурсы остаются в установленной игре пользователя.
 
-`Build-Native.ps1` собирает публичный движок ревизии `f746af7e626c96e693cb74a032da47a602c1a039` с патчами адаптера в `build/native/windows-x86/generalszh.exe`. Один движок используется всеми версиями Minecraft и профилями игры. Он читает установленную игру; это не её оригинальный EXE.
+Чтобы переиспользовать собранный движок, передайте `NATIVE_BIN=/path/to/generalszh.exe`. Так можно собирать JAR на Linux, но для игры клиентам и серверу по-прежнему нужен Windows. Gradle принимает тот же путь через `-PnativeBinary=...`. Среда C++ связана статически.
 
-Чтобы не пересобирать C++, передайте `NATIVE_BIN=/path/to/source-built/generalszh.exe`. Так работает Linux-задание CI после Windows-сборки движка. Gradle также принимает `-PnativeBinary=...`. C++ runtime включён статически; отдельный Visual C++ Redistributable не нужен.
+## Версии Minecraft
 
-## Поддержка версий
+Общий код и последовательные адаптеры находятся в одной ветке. Выбирайте сборку через `MC=...` и устанавливайте только соответствующий JAR. Версия по умолчанию задана в `gradle.properties`.
 
-Используется одна ветка с общим кодом и последовательными адаптерами. Другую версию собирайте через `MC=...`, для игры ставьте соответствующий JAR. Одновременно устанавливается один JAR Generals. Версия по умолчанию задана в `gradle.properties`.
-
-| Где | Что находится |
+| Путь | Назначение |
 | --- | --- |
-| `versions/*.properties` | Точные версии Minecraft, Loader, Fabric API, Java и адаптеров |
-| `src/main`, `src/client` | Общий код на базе 1.21.4 |
-| `src/versions/modern` | Изменения для 1.21.11 |
-| `src/versions/26.1`, `26.2`, `26.3` | Новые API; 26.1.1/26.1.2 используют слой 26.1 |
+| `versions/*.properties` | Точные версии Minecraft, Fabric Loader, Fabric API, Java и адаптеров |
+| `src/main`, `src/client` | Общий код на основе 1.21.4 |
+| `src/versions/modern` | Изменения API для 1.21.11 |
+| `src/versions/26.1`, `26.2`, `26.3` | Следующие изменения API; 26.1.1 и 26.1.2 используют 26.1 |
 
-Для новой версии:
+Для новой версии создайте профиль, адаптируйте изменившиеся API и выполните `stageRelease`. Поздний адаптер заменяет ранний файл с таким же относительным путём. `tools/ci_versions.py` подхватит профиль автоматически. Номер без профиля отклоняется. Проверьте ввод, F8, отрисовку, туман, звук, маркеры, сохранённые данные и сеть в готовом JAR. Одной компиляции недостаточно.
 
-1. Создайте `versions/<версия>.properties` с точными значениями `minecraft`, `loader`, `fabric_api`, `java`, `unobfuscated` и `overlays`.
-2. Используйте готовые адаптеры и добавьте только изменённые файлы в `src/versions/<слой>/{main,client}/{java,resources}`. Поздний слой заменяет ранний файл с тем же относительным путём.
-3. Запустите `stageRelease` с новым профилем. `tools/ci_versions.py` сам включит его в CI. Номер без профиля отклоняется.
-4. Проверьте готовый JAR: ввод, возврат в Minecraft, модели, туман, звук, маркеры, данные мира и сеть. Успешной компиляции для подтверждения совместимости недостаточно.
+## GitHub Actions
 
-Для 1.21.x используется Java 21, для 26.x — Java 25. До 26.x применяется remap, в 26.x — Loom для необфусцированной Minecraft.
+Откройте **Actions → Build mod → Run workflow**, выберите `all` или точную версию. Скачайте пакет из **Artifacts**. CI собирает движок на Windows, затем JAR на Linux. Установленные игры и секреты не нужны.
+
+Изменения только README и `docs/` не запускают сборку при push и pull request. Ручной запуск и теги релиза её запускают. Ключ кэша движка учитывает `native/`, `Build-Native.ps1`, `tools/prepare_engine.py` и `tools/patch*.py`. Изменения Java используют готовый движок при совпадении ключа. Для пересборки удалите запись в **Actions → Caches**. Проверки JAR выполняются как обычно.
 
 ## Проверки
 
-`stageRelease` запускает 38 проверок общей логики и аудит JAR: SHA256/импорты движка, отсутствие игровых данных и тестовых драйверов. Проверки настоящего клиента выполняются отдельно:
+`stageRelease` выполняет 43 проверки общей логики и аудит пакета. Аудит сверяет хеш движка и зависимости, отклоняет игровые ресурсы, Markdown и тестовые драйверы внутри JAR. Архив исходников и документация лежат рядом с JAR.
+
+Игровые проверки используют отдельный приватный драйвер, постоянные профили и миры QA. Они переиспользуют игры в `C:/Games/Generals` и `C:/Games/Generals ZH`. Отчёты находятся в `evidence/`. Не копируйте установки и миры между прогонами.
 
 ```powershell
-.\gradlew.bat productionSmoke '-Pminecraft_target=1.21.11' -PnativeFeedbackRegression -PnativeTestLanguage=en_us
-.\gradlew.bat productionSmoke '-Pminecraft_target=26.3' -PnativeFeedbackRegression -PnativeTestLanguage=en_us
-python tools/native_pointer_bench.py
-python tools/native_path_budget_bench.py
-python tools/native_material_bench.py
-python tools/native_lockstep_bench.py --graphics-peers --combat
+.\gradlew.bat productionSmoke '-Pminecraft_target=1.21.4' -PnativePolishRegression -PnativePolishSkipRoster -PnativeReportsRegression -PnativeLatestRegression -PnativeTestLanguage=en_us
+.\gradlew.bat productionSmoke '-Pminecraft_target=1.21.11' -PnativeTestLanguage=en_us
+.\gradlew.bat productionSmoke '-Pminecraft_target=26.3' -PnativeTestLanguage=en_us
 python tools/verify_native_patch.py
 ```
 
-`productionSmoke` запускает готовый JAR с отдельным приватным драйвером, мирами и профилями. Локальным сценариям нужны ваши игры в `C:/Games/Generals ZH` и `C:/Games/Generals`. Отчёты идут в `evidence/`, вне релиза.
+Команда для 1.21.4 проверяет готовность, чат, восстановление склада, обычный клик и сдачу ресурсов, коллизии, посадку, пассажира в третьем лице, огонь, стрелы, отрисовку и повышения в неизведанной области. Проверки новых версий включают движение, посадку, отпускание огня, меню и пиксели тумана.
 
-Кадры для README: `productionSmoke -Pminecraft_target=1.21.4 -PnativeReleaseUx -PnativeReadmeCapture -PnativeTestLanguage=en_us`. Для русского языка укажите `ru_ru`, для съёмки только меню — `-PnativeReadmeCapture=ui`. Кадры сохраняются в `build/production-smoke/screenshots/readme-*.png`; драйвер съёмки не входит в JAR игрока.
+Для отдельных сценариев:
 
-Проверка F8/Peaceful на 1.21.4: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky`. Проверяет потерянное отпускание Alt, смену сложности в меню паузы, выбор и движение мышью, пиксели штатной подсказки. Без `-PnativeResumeSticky` выполняет четыре обычных цикла F8.
+| Сценарий | Добавьте к `productionSmoke` |
+| --- | --- |
+| Меню без боя, 1.21.11 или 26.x | `-PnativeUiOnly` |
+| Навигация меню на 1.21.4, прежний QA-мир | `-PnativeNavigationOnly` |
+| Настоящий Modern UI на поддерживаемой версии | `-PnativeExtraMods=build/qa/addons/<версия>` |
+| F8 и Peaceful, 1.21.4 | `-PnativeResumeRegression -PnativeResumeSticky` |
+| Размещение, коллизии, ЭМИ/ECM, 1.21.4 | `-PnativePolishRegression` |
+| Супероружие, высокие цели, обход кактусов, 1.21.4 | `-PnativePolishRegression -PnativeStrategicRegression` |
+| Два клиента Minecraft с задержкой, 26.3 | `-PnativeStabilityNetwork -PnativeStabilitySeconds=120` |
+| Перезагрузка ресурсов, 26.3 | `-PnativeReloadCycles=12` |
+| Четыре кадра гайда, 26.3 | `-PnativeUiOnly -PnativeGuideCapture -PnativeTestLanguage=en_us` или `ru_ru` |
 
-Проверка двух клиентов 1.21.4: `runClient -Pminecraft_target=1.21.4 -PnativeNetworkBench -PnativeNetworkDualOnly -PnativeFakeLatency`. Она проверяет команды, темп симуляции и восстановление при 0/100/300/0 мс RTT с колебаниями.
+Нативные проверки принимают `--exe build/native/windows-x86/generalszh.exe --lab <QA-lab>`. `tools/native_supply_regression_bench.py` проверяет сбор обычным кликом у всех трёх сторон. `tools/native_latest_bench.py` проверяет поворот башни без огня, отпускание стрельбы, непрозрачность самолётов и захват нефтевышки NPC. `tools/native_navigation_bench.py` проверяет движение по местности Minecraft. Нужна существующая лаборатория QA.
 
-Проверка стабильности 26.3: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=480`. Добавьте `-PnativeStabilitySolo` для одного клиента с общей симуляцией или `-PnativeStabilityJfr` для профилирования Java. Перезагрузка ресурсов: обычный `productionSmoke -PnativeReloadCycles=12`.
+Modern UI использует настоящие `Fragment`, `Button`, `EditText` и `RippleDrawable`. SDK нужен только для компиляции. Общие контроллеры Minecraft проверяют ввод и отправляют запросы серверу. Адаптеры поддерживают 1.21.4 и 26.1 по 26.1.2. Остальные профили используют встроенную тему. Дерево интерфейса описано на Java.
 
-Короткий сценарий эффектов, транспорта, управления и маркеров: `productionSmoke -Pminecraft_target=<версия> -PnativeFeedbackRegression`. Он переиспользует тестовые профили и миры. Полный сценарий первой установки 1.21.4 (`-PnativeReleaseUx`) нужен при изменениях подключения игры; он создаёт отдельную чистую конфигурацию. Для изменений UI достаточно короткого целевого сценария. Боевые и сетевые проверки повторяйте при изменении симуляции, транспорта или исправлении регрессии. Они не заменяют долгие WAN-матчи и проверку больших армий.
+Скриншоты README сняты с английским интерфейсом. Для нового захвата добавьте `-PnativeReleaseUx -PnativeReadmeCapture -PnativeTestLanguage=en_us` к запуску 1.21.4. Значение `=ui` у `nativeReadmeCapture` пропускает бой. Кадры находятся в `build/production-smoke/screenshots/`. Полная проверка первого запуска создаёт новое приватное подключение. Для остальных правок используйте отдельные сценарии.
 
-Remap исходников зависимостей отключён для ускорения сборки. Для просмотра кода в IDE включите `-Dfabric.loom.ci=false`.
+## Диагностика задержки ввода
 
+Во время игры выполните `python tools/watch_latency.py --seconds 30 --capture latency-report.json` и отдайте приказы движения и атаки. Для приватных проверок добавьте `--root build/qa/native`.
 
-Проверка стартовых площадок и разрушений: `productionSmoke -Pminecraft_target=1.21.4 -PnativeResumeRegression -PnativeResumeSticky -PnativeWorldPolish`. Проверяет расчистку, отказ при наличии сундука без частичных изменений, обычную и принудительную атаку.
+| Показатель | Что измеряет |
+| --- | --- |
+| Native Hz | Частота симуляции, обычно около 30 Гц |
+| `ipc_pending` | Локальная очередь команд движку, не сетевой пинг |
+| `snapshot_age` | Время с последнего состояния движка |
+| `frameIntervalMs` | Интервал кадров Minecraft |
+| `clickHandlingMs` | Определение цели и отправка клика |
+| `localIpcAckMs` | Время до обработки ввода нативным процессом |
+| `sceneIngestMs`, `meshSubmitMs` | Обработка сцены и отправка геометрии на клиенте |
 
-Проверка движения: `python tools/native_navigation_bench.py --exe build/native/windows-x86/generalszh.exe --lab <QA-lab>`. Нужен существующий тестовый профиль; установки и миры не копируются.
+Поворот юнита происходит после доставки ввода. Сравните одиночный и сетевой отчёты на компьютере с проблемой. Если нативные показатели в норме, а Minecraft тормозит, запишите F3+L. В отчёте задержки есть тайминги и сведения о среде, без названий мира и игроков. `-PnativeStabilityJfr` добавляет ограниченную запись Java в проверку стабильности. Приватный сетевой тест вводит 0/100/300/0 мс RTT с джиттером и проверяет восстановление. Он не заменяет WAN-матч.
 
-## Диагностика задержки
+## Выпуск релиза
 
-Во время матча выполните `python tools/watch_latency.py --seconds 30`. Для приватных проверок версий добавьте `--root build/qa/native`. Скрипт только читает снимки состояния и не создаёт файлов.
-
-- Симуляция движка должна держаться около 30 Гц. Устойчивое падение указывает на работу движка или ожидание участника.
-- Рост `ipc_pending` означает, что локальные команды ждут обработки движком. Это не сетевой пинг.
-- Рост `snapshot_age` означает, что новые снимки перестали приходить. Проверьте журнал сессии и поле `error`.
-- Если эти показатели нормальные, но растёт время кадра Minecraft, проверьте рендер через F3 и короткую запись F3+L.
-
-Для отчёта выполните `python tools/watch_latency.py --seconds 30 --capture latency-report.json` и отдайте несколько приказов движения и атаки. Играйте до завершения записи. Скрипт создаёт небольшой запрос и результат в активной сессии, а также указанный отчёт. В нём — время кадров и кликов, версии Java/MC/мода, число потоков CPU и размер памяти Java. Имена игроков, миры и пути установок не записываются.
-
-`frameIntervalMs` — интервалы кадров Minecraft; `sceneIngestMs` и `meshSubmitMs` — обработка и отправка сцены на отрисовку, без отложенной работы GPU. `clickHandlingMs` — выбор цели и отправка клика; `localIpcAckMs` — время до чтения ввода движком, до завершения поворота юнита или подтверждения сетевого хода. `nativeUpdateMs`, `nativeGuiMs`, `nativePublishMs` показывают работу движка, захват интерфейса и публикацию снимка; этапы могут пересекаться, складывать их нельзя. Сравните одиночный и сетевой матч на проблемном компьютере. На старых сборках в отчёте будут только native-замеры; клиентские доступны с beta.13. Если скачет время кадра, дополните отчёт записью Minecraft через F3+L.
-
-Контрольная проверка двух клиентов 26.3: `productionSmoke -Pminecraft_target=26.3 -PnativeStabilityNetwork -PnativeStabilitySeconds=120`. В приватное соединение второго клиента добавляются 0/100/300/0 мс RTT с колебаниями, затем проверяется восстановление. `-PnativeStabilityJfr` включает ограниченные по размеру записи Java. Миры и профили тестов используют фиксированные каталоги; копировать проект или установку игры между запусками не нужно.
-
-
-## Выпуск
-
-1. Загрузите проект в свой GitHub-репозиторий с основной веткой `main`. Workflow должен лежать в `.github/workflows/build.yml`. При необходимости `make source` экспортирует чистую копию в `build/release/generals-minecraft-<версия>-source.zip`.
-2. Запустите **Actions → Build mod → Run workflow → all**. CI собирает семь профилей и проверяет логику/пакеты; игровые тесты остаются локальными.
-3. Задайте `mod_version` в `gradle.properties`, обновите оба файла истории изменений и сделайте коммит. Версия мода общая для всех профилей Minecraft.
-4. Отправьте совпадающий тег, например:
+1. Задайте `mod_version` в `gradle.properties`, обновите оба файла истории изменений.
+2. Соберите все профили и выполните нужные игровые проверки. Проверьте JAR, исходники и хеши.
+3. Закоммитьте и отправьте проект. `.github/workflows/build.yml` должен лежать в корне репозитория.
+4. Отправьте совпадающий тег:
 
 ```sh
-git tag v0.2.0-beta.13
-git push origin v0.2.0-beta.13
+git tag v0.2.0-beta.24
+git push origin v0.2.0-beta.24
 ```
 
-5. Откройте **Releases**, проверьте черновик и нажмите **Publish release**. Теги с `-beta` создают предварительные выпуски.
+5. Откройте **Releases**, проверьте черновик и нажмите **Publish release**. Теги beta создают предварительные выпуски.
 
-Несовпадающий тег отклоняется до сборки движка. Повторный запуск обновляет черновик, но не опубликованный релиз. Workflow использует `gh release create --draft`.
-
-Не добавляйте в Git и релиз `build`, `run`, `private`, `evidence`, подключения, извлечённые игровые данные и декомпилированный код. `releaseSources` собирает файлы по явному списку; `stageRelease` прикладывает исходники к каждому пакету.
+Несовпадающий тег отклоняется до сборки движка. Повторный запуск обновляет черновик, но не опубликованный релиз. Не добавляйте в Git `build`, `run`, `private`, `evidence`, установки и извлечённые или декомпилированные игровые данные. Архивы исходников собираются по явному списку файлов.
 
 [README](../README.ru.md) · [Изменения](../CHANGELOG.ru.md)

@@ -82,6 +82,12 @@ def main():
     change(obj, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
     change(obj,'//USE_PERF_TIMER(Object_reactToTransformChange)','//USE_PERF_TIMER(Object_reactToTransformChange)\n    if(zhmc::hostProjectileMoved(this,oldPos))return;')
     change(obj, 'void Object::attemptDamage( DamageInfo *damageInfo )\n{', 'void Object::attemptDamage( DamageInfo *damageInfo )\n{\n    if (zhmc::externalDamage(this,damageInfo)) return;')
+    # Imported mobs use a civilian proxy. Its zero subdual cap made the original
+    # ECM weapon estimate zero damage and refuse to fire at a Minecraft target.
+    active_body=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Body/ActiveBody.cpp'
+    change(active_body,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
+    change(active_body,'return getActiveBodyModuleData()->m_subdualDamageCap > 0;','return zhmc::isExternalObject(getObject()->getID()) || getActiveBodyModuleData()->m_subdualDamageCap > 0;')
+    change(active_body,'Real ActiveBody::estimateDamage( DamageInfoInput& damageInfo ) const\n{','Real ActiveBody::estimateDamage( DamageInfoInput& damageInfo ) const\n{\n    if(zhmc::isExternalObject(getObject()->getID()) && (damageInfo.m_damageType==DAMAGE_SUBDUAL_VEHICLE || damageInfo.m_damageType==DAMAGE_SUBDUAL_BUILDING || damageInfo.m_damageType==DAMAGE_SUBDUAL_UNRESISTABLE))return damageInfo.m_amount;')
     aiupdate = root / 'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate.cpp'
     change(aiupdate, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
     change(aiupdate, 'UpdateSleepTime AIUpdateInterface::update()\n{', 'UpdateSleepTime AIUpdateInterface::update()\n{\n    if (zhmc::isExternalObject(getObject()->getID())) return UPDATE_SLEEP_NONE;')
@@ -107,7 +113,31 @@ def main():
     change(missile,'if (other==nullptr) {','if (other==nullptr && !zhmc::hostBlockImpact()) {')
     miles=root/'Core/GameEngineDevice/Source/MilesAudioDevice/MilesAudioManager.cpp'
     change(miles,'#include "MilesAudioDevice/MilesAudioManager.h"','#include "MilesAudioDevice/MilesAudioManager.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
-    change(miles,'return findActiveMusic() != nullptr;','auto playing=findActiveMusic();if(playing){F32 measured=0;AIL_stream_volume_pan(playing->m_stream,&measured,nullptr);zhmc::hostAudioMeter(measured);}return playing != nullptr;')
+    change(miles,'#include "MilesAudioDevice/MilesAudioManager.h"','#include "MilesAudioDevice/MilesAudioManager.h"\nnamespace zhmc {void hostTrack(const char*,float);}')
+    if 'zhmc::hostTrack(playing->' not in miles.read_text(encoding='utf-8-sig'):
+        change(miles,'return findActiveMusic() != nullptr;','auto playing=findActiveMusic();if(playing){F32 measured=0;AIL_stream_volume_pan(playing->m_stream,&measured,nullptr);zhmc::hostAudioMeter(measured);}return playing != nullptr;')
+        change(miles,'zhmc::hostAudioMeter(measured);','zhmc::hostAudioMeter(measured);zhmc::hostTrack(playing->m_audioEventRTS->getEventName().str(),getEffectiveVolume(playing->m_audioEventRTS.Peek()));')
+    # An explicit host choice also overrides nonzero faction-template starting money.
+    player_cash=root/'GeneralsMD/Code/GameEngine/Source/Common/RTS/Player.cpp'
+    change(player_cash,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {bool hostStartingCash(unsigned int&);}')
+    change(player_cash,'m_money.setPlayerIndex(getPlayerIndex());','m_money.setPlayerIndex(getPlayerIndex());\n        unsigned int hostCash;if(pt->isPlayableSide()&&zhmc::hostStartingCash(hostCash))m_money.setStartingCash(hostCash);')
+    # Original font glyphs are world indicators too. Never bake squad numbers into a delayed GUI image.
+    glyphs=root/'GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/render2d.cpp'
+    change(glyphs,'#include "render2d.h"','#include "render2d.h"\nnamespace zhmc {bool captureOverheadQuads(TextureClass*,const Vector2*,const Vector2*,const unsigned long*,int,float,float);}')
+    change(glyphs,'void Render2DClass::Render()\n{','void Render2DClass::Render()\n{\n    if(!IsHidden&&Vertices.Count()&&zhmc::captureOverheadQuads(Texture,&Vertices[0],&UVCoordinates[0],&Colors[0],Vertices.Count(),ScreenResolution.Width(),ScreenResolution.Height()))return;')
+    indicator=root/'GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp'
+    change(indicator,'void Drawable::drawUIText()\n{','void Drawable::drawUIText()\n{\n    zhmc::OverheadScope overhead(getObject());')
+    # A catch-up loop can clear GameLogic::hasUpdated while checking the next committed
+    # frame. Visual systems must consume the frame counter, not that transient flag.
+    client=root/'GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp'
+    change(client,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {bool hostParticleSteps(bool);} ')
+    change(client,'if( !freezeTime && TheGameLogic->hasUpdated() )\n\t{\n\t\tTheParticleSystemManager->setLocalPlayerIndex(localPlayerIndex);',
+           'if( !freezeTime && zhmc::hostParticleSteps(TheGameLogic->hasUpdated()) )\n\t{\n\t\tTheParticleSystemManager->setLocalPlayerIndex(localPlayerIndex);')
+    # Route only stock faction tracks. Unknown mod soundtracks retain their own names.
+    audio_names=root/'Core/GameEngine/Source/Common/Audio/GameAudio.cpp'
+    change(audio_names,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {const char* hostFactionTrack(const char*);}')
+    change(audio_names,'AudioHandle AudioManager::addAudioEvent(const AudioEventRTS *eventToAdd)\n{',
+           'AudioHandle AudioManager::addAudioEvent(const AudioEventRTS *eventToAdd)\n{\n    const char* mapped=zhmc::hostFactionTrack(eventToAdd->getEventName().str());\n    if(mapped){AudioEventRTS corrected(mapped);corrected.setPlayerIndex(eventToAdd->getPlayerIndex());return addAudioEvent(&corrected);}')
     # Minecraft uses its own visibility; SAGE must create FX before the scene exporter can see them.
     fx=root/'Core/GameEngine/Source/GameClient/FXList.cpp'
     particles=root/'Core/GameEngine/Source/GameClient/System/ParticleSys.cpp'
@@ -122,6 +152,8 @@ def main():
     change(particles,'visibilityState.isShrouded = objectAttachedTo->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED;',
            'visibilityState.isShrouded = objectAttachedTo->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED && !zhmc::hostMinecraftEffects(objectAttachedTo->getPosition());')
     weapon = root / 'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp'
+    for signature in ('Bool Weapon::fireWeapon(const Object *source, Object *target, ObjectID* projectileID)', 'Bool Weapon::fireWeapon(const Object *source, const Coord3D* pos, ObjectID* projectileID)'):
+        change(weapon,signature+'\n{',signature+'\n{\n    if(!zhmc::hostDriverCanFire(source))return FALSE;')
     change(weapon, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/Bridge.h"')
     change(weapon,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {void hostProjectile(Object*,const Object*);}')
     change(weapon,'projectile->setProducer(sourceObj);','projectile->setProducer(sourceObj);\n    zhmc::hostProjectile(projectile,sourceObj);')
@@ -131,21 +163,58 @@ def main():
     firestorm=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/FirestormDynamicGeometryInfoUpdate.cpp'
     for effect in (neutron,firestorm):
         change(effect,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
-    change(neutron,'\tdamageInfo.in.m_sourceID = missile->getID();','\tdamageInfo.in.m_sourceID = missile->getID();\n    zhmc::hostExplosion(missilePos,blastInfo->outerRadius,max(blastInfo->maxDamage,blastInfo->minDamage),(unsigned int)missile->getID(),DAMAGE_EXPLOSION);')
+    change(neutron,'\tdamageInfo.in.m_sourceID = missile->getID();','\tdamageInfo.in.m_sourceID = missile->getID();\n    zhmc::hostStrategicExplosion(missilePos,blastInfo->outerRadius,max(blastInfo->maxDamage,blastInfo->minDamage),(unsigned int)missile->getID(),DAMAGE_EXPLOSION);')
     change(firestorm,'\tReal boundingCircle = firestorm->getGeometryInfo().getBoundingCircleRadius();','\tReal boundingCircle = firestorm->getGeometryInfo().getBoundingCircleRadius();\n    zhmc::hostExplosion(firestormPos,boundingCircle,modData->m_damageAmount,(unsigned int)firestorm->getID(),DAMAGE_FLAME);')
+    # Explicit strategic strikes retain terrain intent, and the beam also reaches imported mob bodies.
+    cannon=root/'GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/ParticleUplinkCannonUpdate.cpp'
+    for source in (neutron,cannon):
+        change(source,'#include "PreRTS.h"','#include "PreRTS.h"\nnamespace zhmc {void hostStrategicExplosion(const Coord3D*,float,float,unsigned int,int);}')
+    change(cannon,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
+    change(neutron,'zhmc::hostExplosion(missilePos,blastInfo->outerRadius,max(blastInfo->maxDamage,blastInfo->minDamage),(unsigned int)missile->getID(),DAMAGE_EXPLOSION);',
+           'zhmc::hostStrategicExplosion(missilePos,blastInfo->outerRadius,max(blastInfo->maxDamage,blastInfo->minDamage),(unsigned int)missile->getID(),DAMAGE_EXPLOSION);')
+    change(cannon,'damageInfo.in.m_deathType = data->m_deathType;',
+           'damageInfo.in.m_deathType = data->m_deathType;\n                zhmc::hostStrategicExplosion(&m_currentTargetPosition,damageRadius,damagePerPulse,(unsigned int)me->getID(),(int)data->m_damageType);')
+    change(cannon,'body->attemptDamage( &damageInfo );',
+           'if(zhmc::isExternalObject(obj->getID()))obj->attemptDamage(&damageInfo);else body->attemptDamage( &damageInfo );')
     change(aiupdate,'\tif (!isAllowedToRespondToAiCommands(parms))\n\t\treturn;','\tif (!isAllowedToRespondToAiCommands(parms))\n\t\treturn;\n    zhmc::hostPlayerCommand(getObject(),parms);')
     action=root/'GeneralsMD/Code/GameEngine/Source/Common/RTS/ActionManager.cpp'
     change(action,'#include "PreRTS.h"','#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"')
-    action_text=action.read_text(encoding='utf-8-sig');action_text=action_text.replace('return zhmc::hostTerrainKnown(loc) ||','return zhmc::hostUnshroudedTarget(loc) ||');action.write_text(action_text,encoding='utf-8',newline='\n')
-    change(action, '//Don\'t allow "damaging" special powers in shrouded areas, but Fogged are okay.\n\t\t\t\treturn ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;', '//Don\'t allow "damaging" special powers in shrouded areas, but Fogged are okay.\n\t\t\t\treturn zhmc::hostUnshroudedTarget(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;')
+    change(action,'transferDest->getShroudedStatus( objPlayer->getPlayerIndex() ) == OBJECTSHROUD_SHROUDED )', 'transferDest->getShroudedStatus( objPlayer->getPlayerIndex() ) == OBJECTSHROUD_SHROUDED && !zhmc::hostSupplyTarget(transferDest) )')
+    action_text=action.read_text(encoding='utf-8-sig').replace('if(zhmc::hostPowerTarget(testPos))return TRUE;','if(zhmc::hostTerrainKnown(testPos))return TRUE;');action_text=action_text.replace('return zhmc::hostPowerTarget(loc) || ','return ').replace('return zhmc::hostTerrainKnown(loc) ||','return zhmc::hostUnshroudedTarget(loc) ||');action.write_text(action_text,encoding='utf-8',newline='\n')
+    shroud_return='return ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;'
+    strategic_return='return (zhmc::hostTerrainKnown(loc) && (spTemplate->getSpecialPowerType()==SPECIAL_NEUTRON_MISSILE || spTemplate->getSpecialPowerType()==NUKE_SPECIAL_NEUTRON_MISSILE || spTemplate->getSpecialPowerType()==SUPW_SPECIAL_NEUTRON_MISSILE || spTemplate->getSpecialPowerType()==SPECIAL_SCUD_STORM || spTemplate->getSpecialPowerType()==SPECIAL_PARTICLE_UPLINK_CANNON || spTemplate->getSpecialPowerType()==SUPW_SPECIAL_PARTICLE_UPLINK_CANNON || spTemplate->getSpecialPowerType()==LAZR_SPECIAL_PARTICLE_UPLINK_CANNON)) || zhmc::hostUnshroudedTarget(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;'
+    if strategic_return not in action.read_text(encoding='utf-8-sig'):
+        legacy_return=shroud_return.replace('return ','return zhmc::hostUnshroudedTarget(loc) || ',1)
+        anchor='//Don\'t allow "damaging" special powers in shrouded areas, but Fogged are okay.\n\t\t\t\t'
+        change(action,anchor+(legacy_return if anchor+legacy_return in action.read_text(encoding='utf-8-sig') else shroud_return),anchor+strategic_return)
+    # Minecraft terrain is the targeting boundary. Powers still run the original
+    # readiness, ownership, science and range checks; shroud must not eat a click.
+    change(action,strategic_return,'return zhmc::hostTerrainKnown(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;')
+    change(action,'return zhmc::hostTerrainKnown(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;','return zhmc::hostPowerTarget(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;')
+    action.write_text(action.read_text(encoding='utf-8-sig').replace('return ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;','return zhmc::hostPowerTarget(loc) || ThePartitionManager->getShroudStatusForPlayer( obj->getControllingPlayer()->getPlayerIndex(), loc ) != CELLSHROUD_SHROUDED;'),encoding='utf-8',newline='\n')
+    change(action,'#include "'+addon.as_posix()+'/Bridge.h"','#include "'+addon.as_posix()+'/Bridge.h"\n#include "'+addon.as_posix()+'/WorldScene.h"')
+
     change(action,'inline Bool isPointOnMap( const Coord3D  *testPos )\n{','inline Bool isPointOnMap( const Coord3D  *testPos )\n{\n    if(zhmc::hostTerrainKnown(testPos))return TRUE;')
+    change(action,'if(zhmc::hostTerrainKnown(testPos))return TRUE;','if(zhmc::hostPowerTarget(testPos))return TRUE;')
     change(action,'#include "'+addon.as_posix()+'/Bridge.h"','#include "'+addon.as_posix()+'/Bridge.h"\nnamespace zhmc {bool hostUnshroudedTarget(const Coord3D*);}')
-    change(action,'return zhmc::hostTerrainKnown(loc) || ThePartitionManager->getShroudStatusForPlayer','return zhmc::hostUnshroudedTarget(loc) || ThePartitionManager->getShroudStatusForPlayer')
+    prolog=action.read_text(encoding='utf-8-sig')
+    begin=prolog.index('#include "PreRTS.h"');end=prolog.index('#include "Common/ActionManager.h"')
+    action.write_text(prolog[:begin]+'#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"\n#include "'+addon.as_posix()+'/WorldScene.h"\nnamespace zhmc {bool hostUnshroudedTarget(const Coord3D*); }\n\n'+prolog[end:],encoding='utf-8',newline='\n')
     # Imported mobs keep Minecraft altitude even above excavated soil; the proxy's ground scatter is not their body.
     anchor='\tif (getProjectileTemplate() == nullptr || isProjectileDetonation)\n\t{\n\t\t// see if we need to be called back at a later point to deal the damage.'
     change(weapon,anchor,'    if(victimObj && zhmc::isExternalObject(victimObj->getID())){\n        Coord3D hostCenter;victimObj->getGeometryInfo().getCenterPosition(*victimObj->getPosition(),hostCenter);\n        projectileDestination.z=hostCenter.z;victimPos=&projectileDestination;\n    }\n'+anchor)
     drawable = root / 'GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp'
     change(drawable, '#include "PreRTS.h"', '#include "PreRTS.h"\n#include "' + addon.as_posix() + '/FrameCapture.h"')
+    change(drawable,'void Drawable::drawIconUI()\n{','void Drawable::drawIconUI()\n{\n    zhmc::OverheadScope hostIcons(getObject());')
+    for method in ('drawEmoticon','drawAmmo','drawContained','drawBattlePlans','drawHealing','drawEnthusiastic','drawDemoralized','drawBombed','drawDisabled','drawConstructPercent','drawCaption','drawVeterancy'):
+        text=drawable.read_text(encoding='utf-8-sig');match=re.search(r'void Drawable::'+method+r'\([^)]*\)\s*\{',text)
+        if not match:raise ValueError('Missing overhead function '+method)
+        scope='\n    zhmc::OverheadScope hostDetail(getObject(),'+('true' if method in ('drawAmmo','drawContained') else 'false')+');'
+        if not text[match.end():].startswith(scope):drawable.write_text(text[:match.end()]+scope+text[match.end():],encoding='utf-8',newline='\n')
+    display=root/'Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplay.cpp'
+    display.write_text(display.read_text(encoding='utf-8-sig').replace('#include "'+addon.as_posix()+'/FrameCapture.h"\n',''),encoding='utf-8',newline='\n')
+    change(display,'#include <numeric>','#include <numeric>\n#include "'+addon.as_posix()+'/FrameCapture.h"')
+    change(display,'\t// sanity\n\tif( image == nullptr )','    if(zhmc::captureOverheadImage(image,startX,startY,endX,endY,color,(int)mode))return;\n\t// sanity\n\tif( image == nullptr )')
     change(drawable,'screen.x -= (m_captionDisplayString->getWidth() / 2);','Int hostCaptionWidth,hostCaptionHeight;m_captionDisplayString->getSize(&hostCaptionWidth,&hostCaptionHeight);\n    if(getObject())zhmc::mobCaptionPosition((unsigned int)getObject()->getID(),&screen.x,&screen.y,hostCaptionHeight);\n\tscreen.x -= (m_captionDisplayString->getWidth() / 2);')
     change(drawable, '\t\t// draw the health box outline', '\t\tif(zhmc::captureHealthBar(obj,healthBarRegion->lo.x,healthBarRegion->lo.y,healthBoxWidth,healthBoxHeight,healthRatio,color,outlineColor))return;\n\t\t// draw the health box outline')
     # Original terrain-extrema caches contain stock-map heights; sparse cells use broad placeholders.
@@ -462,6 +531,13 @@ def main():
     change(builds,'struct SampleBuildData\n{','struct SampleBuildData\n{\n    Real hostRequiredHeight=0;')
     change(builds,'SampleBuildData *sampleData = (SampleBuildData *)userData;','SampleBuildData *sampleData = (SampleBuildData *)userData;\n    if (!zhmc::buildSurfaceAllowed(samplePoint->x,samplePoint->y,sampleData->hostRequiredHeight)) sampleData->terrainRestricted=TRUE;')
     change(builds,'SampleBuildData sampleData;','SampleBuildData sampleData;\n        sampleData.hostRequiredHeight=build->getTemplateGeometryInfo().getMaxHeightAbovePosition();')
+    # Stock maps have a small fixed vertical extent. Host roof elevations can exceed it.
+    change(builds,'sampleData.hiZ = terrainExtent.lo.z;','sampleData.hiZ = -1.0e30f;')
+    change(builds,'sampleData.loZ = terrainExtent.hi.z;','sampleData.loZ = 1.0e30f;')
+    change(builds,'terrain = TheTerrainVisual->getTerrainTile( samplePoint->x, samplePoint->y );',
+           'terrain = zhmc::hostTerrainKnown(samplePoint)?nullptr:TheTerrainVisual->getTerrainTile( samplePoint->x, samplePoint->y );')
+    change(neutron,'pos.z = TheTerrainLogic->getGroundHeight( pos.x, pos.y );\n\n\t\t// record the frame',
+           'pos.z = zhmc::hostTerrainKnown(missilePos)?missilePos->z:TheTerrainLogic->getGroundHeight( pos.x, pos.y );\n\n\t\t// record the frame')
     # Host camera projection must also serve original rectangle/similar-type selection.
     change(view,'#include "W3DDevice/GameClient/W3DView.h"','#include "W3DDevice/GameClient/W3DView.h"\nnamespace zhmc {void hostSelectionRegion(bool,unsigned int,int,int,int);}')
     old_region_tail='        }return matched;'
@@ -520,6 +596,7 @@ def main():
     terrain_header=root / 'Core/GameEngineDevice/Include/W3DDevice/GameClient/BaseHeightMap.h'
     change(terrain_header,'\tBaseHeightMapRenderObjClass();','\tW3DBibBuffer* hostBibBuffer() const { return m_bibBuffer; }\n\tBaseHeightMapRenderObjClass();')
     bib_source=root / 'GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DBibBuffer.cpp'
+    change(bib_source,'#include "Common/GlobalData.h"','#include "Common/GlobalData.h"\n#include "GameClient/GameClient.h"\n#include "GameClient/InGameUI.h"')
     value=bib_source.read_text(encoding='utf-8-sig')
     if 'void W3DBibBuffer::hostBibs(' not in value:
         value+='''
@@ -533,6 +610,15 @@ void W3DBibBuffer::hostBibs(void (*emit)(void*,TextureClass*,const Vector3*,unsi
     value=bib_source.read_text(encoding='utf-8-sig')
     begin=value.index('void W3DBibBuffer::hostBibs(');body=value[begin:]
     body=re.sub(r'    auto a=TheGlobalData->m_terrainAmbient\[0\];auto d=TheGlobalData->m_terrainDiffuse\[0\];\n    unsigned int color=[^\n]+;', '    unsigned int color=0xffffffff; // The host lightmap supplies terrain lighting.',body)
+    # Highlight is also retained on permanent object bibs. Only the placement
+    # drawable is allowed to use TBRedBib, which marks an invalid placement.
+    body=body.replace('m_bibs[i].m_highlight?m_highlightBibTexture:m_bibTexture','(m_bibs[i].m_highlight&&m_bibs[i].m_drawableID!=INVALID_DRAWABLE_ID)?m_highlightBibTexture:m_bibTexture')
+    body=re.sub(r'    for\(int i=0;i<m_numBibs;\+\+i\)if\(!m_bibs\[i\].m_unused\)emit\([^\n]+;', '''    for(int i=0;i<m_numBibs;++i)if(!m_bibs[i].m_unused){
+        auto draw=m_bibs[i].m_drawableID!=INVALID_DRAWABLE_ID?TheGameClient->findDrawableByID(m_bibs[i].m_drawableID):nullptr;
+        Bool preview=draw&&TheInGameUI->hostIsPlacementDrawable(draw);
+        if(m_bibs[i].m_drawableID!=INVALID_DRAWABLE_ID&&!draw)continue;
+        emit(data,(preview&&m_bibs[i].m_highlight)?m_highlightBibTexture:m_bibTexture,m_bibs[i].m_corners,color,&m_bibs[i],preview);
+    }''',body)
     bib_source.write_text(value[:begin]+body,encoding='utf-8',newline='\n')
     for relative,signature in (
         ('GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIPlayer.cpp','void AIPlayer::update()\n{'),
@@ -554,6 +640,11 @@ void W3DBibBuffer::hostBibs(void (*emit)(void*,TextureClass*,const Vector3*,unsi
     change(audio,'\tCoord3D cameraPivot = TheTacticalView->getPosition();','\tCoord3D cameraPivot = TheTacticalView->getPosition();\n    Coord3D hostCameraPos,hostFacing;Bool hostAudio=zhmc::hostAudioView(cameraPivot,hostCameraPos,hostFacing);')
     change(audio,'\tlookTo.set(forward.X, forward.Y, forward.Z);','\tlookTo.set(forward.X, forward.Y, forward.Z);\n    if(hostAudio)lookTo=hostFacing;')
     change(audio,'\tCoord3D cameraPos = TheTacticalView->get3DCameraPosition();','\tCoord3D cameraPos = hostAudio?hostCameraPos:TheTacticalView->get3DCameraPosition();')
+    # Normalize the small integration preamble after adding hooks in older checkouts.
+    value=audio.read_text(encoding='utf-8-sig')
+    begin=value.index('#include "PreRTS.h"');end=value.index('#include "Common/GameAudio.h"',begin)
+    preamble='#include "PreRTS.h"\n#include "'+addon.as_posix()+'/Bridge.h"\nnamespace zhmc {const char* hostFactionTrack(const char*);}\nnamespace zhmc {bool hostAudioView(Coord3D&,Coord3D&,Coord3D&); }\n'
+    audio.write_text(value[:begin]+preamble+value[end:],encoding='utf-8',newline='\n')
     from patch_paged_world import apply as patch_paged
     patch_paged(root,addon,change)
     from patch_native_lockstep import apply as patch_lockstep

@@ -27,6 +27,7 @@ public final class WorldResourceStore extends SavedData {
         if(template!=null){var t=new CompoundTag();t.putString("name",template.name());t.putFloat("major",template.major());t.putFloat("minor",template.minor());t.putFloat("height",template.height());tag.put("template",t);}
         var entries=new ListTag();for(var node:nodes.values()){var n=new CompoundTag();n.putString("key",node.key);n.putInt("x",node.x);n.putDouble("y",node.y);n.putInt("z",node.z);n.putString("template",node.template);n.putInt("cash",node.cash);entries.add(n);}tag.put("nodes",entries);return tag;
     }
+    public void resetStocks(){boolean changed=nodes.values().stream().anyMatch(n->n.cash()!=-1);if(changed){nodes.replaceAll((key,n)->new Node(n.key(),n.x(),n.y(),n.z(),n.template(),-1));setDirty();}}
     public void remaining(String key,int cash){var old=nodes.get(key);if(old!=null&&cash>=0&&old.cash!=cash){nodes.put(key,new Node(key,old.x,old.y,old.z,old.template,cash));setDirty();}}
     public void configure(NativeSession.ResourceTemplate value){if(!Objects.equals(template,value)){template=value;setDirty();}}
     public void chunkLoaded(int chunkX,int chunkZ){

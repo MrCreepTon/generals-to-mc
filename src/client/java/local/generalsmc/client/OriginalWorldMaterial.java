@@ -22,7 +22,7 @@ final class OriginalWorldMaterial extends RenderType {
         int src=k.mode&15,dst=(k.mode>>4)&15;
         if(src>=SOURCE.length||dst>=DEST.length)throw new IllegalArgumentException("Invalid original blend factors");
         RenderSystem.enableBlend();RenderSystem.blendFunc(SOURCE[src],DEST[dst]);
-        RenderSystem.depthMask((k.mode&0x200)!=0);RenderSystem.disableCull();
+        RenderSystem.depthMask((k.mode&0x200)!=0);if((k.mode&0x80000)!=0)RenderSystem.enableCull();else RenderSystem.disableCull();
         if((k.mode&0x20000)!=0){RenderSystem.depthFunc(512+((k.mode>>12)&7));boolean color=(k.mode&0x400)!=0;RenderSystem.colorMask(color,color,color,color);}
     };}
     private static Runnable cleanup(Key k){return ()->{delegate(k).clearRenderState();RenderSystem.depthMask(true);RenderSystem.depthFunc(515);RenderSystem.colorMask(true,true,true,true);RenderSystem.enableCull();RenderSystem.defaultBlendFunc();RenderSystem.disableBlend();};}

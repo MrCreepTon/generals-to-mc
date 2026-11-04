@@ -15,7 +15,7 @@ final class NativeUsabilityBench {
     static int age;static Vec3 start;static BlockPos block;static CompletableFuture<?> work;
     static boolean tick(Minecraft mc,List<String> checks){
         age++;
-        if(mc.screen!=null||NativeWorldView.controlling())throw new IllegalStateException("F8 left an input/camera screen active");
+        if(MenuScreens.active(mc.screen)!=null||NativeWorldView.controlling())throw new IllegalStateException("F8 left an input/camera screen active");
         if(age==1){if(mc.isWindowActive()&&!mc.mouseHandler.isMouseGrabbed())throw new IllegalStateException("Active Minecraft window did not recapture its mouse after F8");net.minecraft.client.KeyMapping.releaseAll();mc.player.setDeltaMovement(Vec3.ZERO);start=mc.player.position();mc.player.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES,start.add(2,-.01,0));mc.gameRenderer.pick(1);if(!(mc.hitResult instanceof BlockHitResult))throw new IllegalStateException("Ordinary crosshair cannot target floor from original base: "+mc.hitResult);}
         if(age==21){if(mc.player.position().subtract(start).horizontalDistance()>.05)throw new IllegalStateException("Stationary commander was pushed by a source proxy: "+start+" -> "+mc.player.position());checks.add("A stationary Minecraft commander remains still inside the source base; invisible proxies do not apply vanilla crowd pushing");mc.player.setYRot(0);mc.player.setXRot(25);}
         if(age>=21&&age<121)net.minecraft.client.KeyMapping.set(net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper.getBoundKeyOf(mc.options.keyUp),true);

@@ -16,7 +16,7 @@ public final class WorldSurface {
         @Override public void close(){if(parent==null)SAMPLE.remove();else SAMPLE.set(parent);}
     }
     static SampleCache sample(Level level){return new SampleCache(level);}
-    private static boolean obstacle(Block block){return block instanceof FenceBlock||block instanceof WallBlock||block instanceof DoorBlock||block instanceof FenceGateBlock;}
+    private static boolean obstacle(Block block){return block instanceof CactusBlock||block instanceof FenceBlock||block instanceof WallBlock||block instanceof DoorBlock||block instanceof FenceGateBlock;}
     private static double top(Level level,int x,int z){
         var cache=SAMPLE.get();if(cache!=null&&cache.level==level){long key=((long)x<<32)|(z&0xffffffffL);var saved=cache.tops.get(key);if(saved!=null)return saved;double value=readTop(level,x,z);cache.tops.put(key,value);return value;}
         return readTop(level,x,z);
@@ -33,6 +33,15 @@ public final class WorldSurface {
     }
     public static double ground(Level level,int x,int z){
         double roof=top(level,x,z);if(!Double.isFinite(roof))return roof;
+        // Broad roofs, terraces and bridge decks are usable surfaces in their own right.
+        // Keep the lower outdoor route only under narrow roofs and overhangs.
+        int width=1,deckDepth=1;
+        for(var direction:Direction.Plane.HORIZONTAL)for(int d=1;d<=8;d++){
+            double neighbor=top(level,x+direction.getStepX()*d,z+direction.getStepZ()*d);
+            if(!Double.isFinite(neighbor)||Math.abs(neighbor-roof)>1.001)break;
+            if(direction.getStepX()!=0)width++;else deckDepth++;
+        }
+        if(width>=9&&deckDepth>=9)return roof;
         var cap=level.getBlockState(new BlockPos(x,(int)Math.floor(roof-.001),z));
         // Natural mountains keep their highest surface. Only built roofs can expose a reachable floor below.
         boolean built=cap.is(BlockTags.PLANKS)||cap.is(BlockTags.STAIRS)||cap.is(BlockTags.SLABS)||cap.is(Blocks.COBBLESTONE)||cap.is(Blocks.MOSSY_COBBLESTONE)||cap.is(Blocks.BRICKS);

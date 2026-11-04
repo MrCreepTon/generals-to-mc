@@ -38,11 +38,11 @@ public final class NativeClientBench {
         ticks++;stageTicks++;
         try {
             if(ticks>20*240)throw new IllegalStateException("Original-engine client bench timed out at stage "+stage);
-            if(!created&&ticks>60&&(mc.screen instanceof TitleScreen||mc.screen instanceof AccessibilityOnboardingScreen)) {
+            if(!created&&ticks>60&&(MenuScreens.active(mc.screen) instanceof TitleScreen||MenuScreens.active(mc.screen) instanceof AccessibilityOnboardingScreen)) {
                 created=true;mc.options.guiScale().set(2);mc.options.pauseOnLostFocus=false;
                 mc.createWorldOpenFlows().createFreshLevel(world,
                     new LevelSettings(world,GameType.CREATIVE,false,Difficulty.PEACEFUL,true,new GameRules(FeatureFlags.DEFAULT_FLAGS),WorldDataConfiguration.DEFAULT),
-                    new WorldOptions(1263217L,false,false),WorldPresets::createNormalWorldDimensions,mc.screen);return;
+                    new WorldOptions(1263217L,false,false),WorldPresets::createNormalWorldDimensions,MenuScreens.active(mc.screen));return;
             }
             if(mc.level==null||mc.player==null||mc.getSingleplayerServer()==null)return;
             if(stage==0) {
@@ -62,10 +62,10 @@ public final class NativeClientBench {
                 session.select(state.objects().stream().filter(o->o.template().equals("AmericaCommandCenter")).findFirst().orElseThrow().id());
                 mc.setScreen(new NativeFrameScreen(session,false));stage=21;stageTicks=0;return;
             }
-            if(stage==21&&stageTicks>30&&state.frame()>=120&&mc.screen instanceof NativeFrameScreen screen&&screen.updates>0) {
+            if(stage==21&&stageTicks>30&&state.frame()>=120&&MenuScreens.active(mc.screen) instanceof NativeFrameScreen screen&&screen.updates>0) {
                 screen.clickOriginal(245,515,true);stage=22;stageTicks=0;return;
             }
-            if(stage==22&&stageTicks>4&&mc.screen instanceof NativeFrameScreen screen) {
+            if(stage==22&&stageTicks>4&&MenuScreens.active(mc.screen) instanceof NativeFrameScreen screen) {
                 screen.clickOriginal(245,515,false);stage=23;stageTicks=0;return;
             }
             if(stage==23&&state.localCash()<10000&&state.objects().stream().filter(o->o.template().equals("AmericaVehicleDozer")).count()>1) {
@@ -83,7 +83,7 @@ public final class NativeClientBench {
                 initialX=dozer.x();initialY=dozer.y();
                 mc.setScreen(new NativeFrameScreen(session.directory.resolve("frame.bmp")));stage=3;stageTicks=0;return;
             }
-            if(stage==3&&stageTicks>40&&mc.screen instanceof NativeFrameScreen screen&&screen.updates>0) {
+            if(stage==3&&stageTicks>40&&MenuScreens.active(mc.screen) instanceof NativeFrameScreen screen&&screen.updates>0) {
                 checks.add("Original WW3D framebuffer uploaded and drawn in the real Minecraft client");
                 Screenshot.grab(mc.gameDirectory,"06-original-frame-transport.png",mc.getMainRenderTarget(),c->{});
                 mc.setScreen(null);
@@ -160,11 +160,11 @@ public final class NativeClientBench {
                 if(Math.abs(center.x-expected.x)>3||Math.abs(center.z-expected.z)>3||bounds.minY<63.5||bounds.maxY>68)throw new IllegalStateException("Original dozer mesh is not standing on Minecraft surface: "+bounds);
                 checks.add("Original posed W3D triangles and original textures drawn in Minecraft world pass at native object coordinates on block surface");
                 Screenshot.grab(mc.gameDirectory,"07-original-units-in-world.png",mc.getMainRenderTarget(),c->{});
-                if(!(mc.screen instanceof NativeWorldScreen screen))throw new IllegalStateException("World input screen missing");
+                if(!(MenuScreens.active(mc.screen) instanceof NativeWorldScreen screen))throw new IllegalStateException("World input screen missing");
                 var pixel=screen.project(center);screen.mouseClicked(pixel[0],pixel[1],0);screen.mouseReleased(pixel[0],pixel[1],0);
                 stage=91;stageTicks=0;return;
             }
-            if(stage==91&&stageTicks>10&&mc.screen instanceof NativeWorldScreen screen){
+            if(stage==91&&stageTicks>10&&MenuScreens.active(mc.screen) instanceof NativeWorldScreen screen){
                 if(!state.selected().contains(dozer.id()))throw new IllegalStateException("Minecraft ray did not select original dozer");
                 checks.add("Minecraft camera ray selected the original dozer's world mesh and sent native selection");
                 var actor=state.objects().stream().filter(o->o.id()==dozer.id()).findFirst().orElseThrow();
@@ -192,10 +192,10 @@ public final class NativeClientBench {
                 session.select(state.objects().stream().filter(o->o.template().equals("AmericaCommandCenter")).findFirst().orElseThrow().id());
                 stage=12;stageTicks=0;return;
             }
-            if(stage==12&&stageTicks>40&&mc.screen instanceof NativeWorldScreen screen) {
+            if(stage==12&&stageTicks>40&&MenuScreens.active(mc.screen) instanceof NativeWorldScreen screen) {
                 screen.clickOriginal(245,515,true);stage=13;stageTicks=0;return;
             }
-            if(stage==13&&stageTicks>4&&mc.screen instanceof NativeWorldScreen screen) {
+            if(stage==13&&stageTicks>4&&MenuScreens.active(mc.screen) instanceof NativeWorldScreen screen) {
                 screen.clickOriginal(245,515,false);stage=14;stageTicks=0;return;
             }
             if(stage==14&&state.localCash()<beforeWorldGuiCash&&state.objects().stream().filter(o->o.template().equals("AmericaVehicleDozer")).count()>beforeWorldGuiDozers) {

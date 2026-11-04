@@ -19,7 +19,7 @@ final class OriginalWorldMaterial {
   int mode=key.mode,src=mode&15,dst=(mode>>4)&15;if(src>=SOURCE.length||dst>=DEST.length)throw new IllegalArgumentException("Invalid original blend");
   RenderPipeline base=((mode&0x800)!=0?((mode&0x100)!=0?RenderTypes.entityCutout(key.texture):RenderTypes.entityTranslucent(key.texture)):RenderTypes.entityTranslucentEmissive(key.texture)).pipeline();
   var pipeline=RenderPipeline.builder().withLocation(Identifier.fromNamespaceAndPath("generalsmc","world/"+Integer.toHexString(mode)))
-   .withVertexShader(base.getShaders().get(ShaderType.VERTEX)).withFragmentShader(base.getShaders().get(ShaderType.FRAGMENT)).withVertexBinding(0,base.getVertexFormatBinding(0)).withPrimitiveTopology(base.getPrimitiveTopology()).withCull(false)
+   .withVertexShader(base.getShaders().get(ShaderType.VERTEX)).withFragmentShader(base.getShaders().get(ShaderType.FRAGMENT)).withVertexBinding(0,base.getVertexFormatBinding(0)).withPrimitiveTopology(base.getPrimitiveTopology()).withCull((mode&0x80000)!=0)
    .withColorTargetState(new ColorTargetState(java.util.Optional.of(new BlendFunction(SOURCE[src],DEST[dst])),base.getColorTargetStates().getFirst().format(),(mode&0x20000)==0||(mode&0x400)!=0?ColorTargetState.WRITE_ALL:ColorTargetState.WRITE_NONE));
   base.getBindGroupLayouts().forEach(pipeline::withBindGroupLayout);
   if((mode&0x800)==0){pipeline.withVertexShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect")).withFragmentShader(Identifier.fromNamespaceAndPath("generalsmc","core/original_effect"));if((mode&0x100)!=0)pipeline.withShaderDefine("GENERALS_ALPHA_TEST");}
